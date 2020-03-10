@@ -1,127 +1,109 @@
 package flixel;
 
 import flixel.system.FlxBGSprite;
+import flixel.util.FlxColor;
 
 /**
- * This is the basic game "state" object - e.g. in a simple game you might have a menu state and a play state.
- * It is for all intents and purpose a fancy FlxGroup. And really, it's not even that fancy.
+ * A `FlxSubState` can be opened inside of a `FlxState`.
+ * By default, it also stops the parent state from updating,
+ * making it convenient for pause screens or menus.
  */
 class FlxSubState extends FlxState
 {
 	/**
-	 * Internal helper
+	 * Callback method for state open/resume event.
+	 * @since 4.3.0
 	 */
-	public var _parentState:FlxState;
+	public var openCallback:Void->Void;
+
 	/**
-	 * Callback method for state close event
+	 * Callback method for state close event.
 	 */
 	public var closeCallback:Void->Void;
-	
-	#if !flash
+
 	/**
-	 * Helper sprite object for non-flash targets. Draws background
+	 * Helper sprite object for non-flash targets. Draws the background.
 	 */
-	private var _bgSprite:FlxBGSprite;
-	#end
-	
+	@:noCompletion
+	var _bgSprite:FlxBGSprite;
+
 	/**
-	 * Internal helper for substates which can be reused
+	 * Helper var for `close()` so `closeSubState()` can be called on the parent.
 	 */
-	private var _initialized:Bool = false;
-	
-	public var initialized(get, null):Bool;
-	
-	inline private function get_initialized():Bool 
-	{ 
-		return _initialized; 
-	}
-	
+	@:noCompletion
+	@:allow(flixel.FlxState.resetSubState)
+	var _parentState:FlxState;
+
+	@:noCompletion
+	var _bgColor:FlxColor;
+
+	@:noCompletion
+	@:allow(flixel.FlxState.resetSubState)
+	var _created:Bool = false;
+
 	/**
-	 * Internal helper method
+	 * @param   BGColor   background color for this substate
 	 */
-	inline public function initialize():Void 
-	{ 
-		_initialized = true; 
-	}
-	
-	/**
-	 * Substate constructor
-	 * @param	BGColor		background color for this substate
-	 * @param	UseMouse	whether to show mouse pointer or not
-	 */
-	public function new(BGColor:Int = 0x00000000, UseMouse:Bool = false)
+	public function new(BGColor:FlxColor = FlxColor.TRANSPARENT)
 	{
 		super();
 		closeCallback = null;
-		
-		#if !flash
-		_bgSprite = new FlxBGSprite();
-		#end
+		openCallback = null;
+
+		if (FlxG.renderTile)
+			_bgSprite = new FlxBGSprite();
 		bgColor = BGColor;
-		useMouse = UseMouse;
 	}
-	
-	override private function get_bgColor():Int 
-	{
-		return _bgColor;
-	}
-	
-	override private function set_bgColor(Value:Int):Int
-	{
-		#if !flash
-		if (_bgSprite != null)
-		{
-			_bgSprite.pixels.setPixel32(0, 0, Value);
-		}
-		#end
-		
-		return _bgColor = Value;
-	}
-	
+
 	override public function draw():Void
 	{
-		//Draw background
-		#if flash
-		if(cameras == null) { cameras = FlxG.cameras.list; }
-		var i:Int = 0;
-		var l:Int = cameras.length;
-		while (i < l)
+		// Draw background
+		if (FlxG.renderBlit)
 		{
-			var camera:FlxCamera = cameras[i++];
-			camera.fill(this.bgColor);
+			for (camera in cameras)
+			{
+				camera.fill(bgColor);
+			}
 		}
-		#else
-		_bgSprite.draw();
-		#end
-		
-		//Now draw all children
+		else
+		{
+			_bgSprite.draw();
+		}
+
+		// Now draw all children
 		super.draw();
 	}
-	
+
+	override public function destroy():Void
+	{
+		super.destroy();
+		closeCallback = null;
+		openCallback = null;
+		_parentState = null;
+		_bgSprite = null;
+	}
+
 	/**
-	 * Use this method to close this substate
-	 * @param	destroy	whether to destroy this state or leave it in memory
+	 * Closes this substate.
 	 */
 	public function close():Void
 	{
-		if (_parentState != null) 
-		{ 
-			_parentState.closeSubState(); 
-		}
-		#if !FLX_NO_DEBUG
-		else 
-		{ 
-			// Missing parent from this state! Do something!!
-			throw "This subState haven't any parent state";
-		}
-		#end
+		if (_parentState != null && _parentState.subState == this)
+			_parentState.closeSubState();
 	}
-	
-	override public function destroy():Void 
+
+	@:noCompletion
+	override inline function get_bgColor():FlxColor
 	{
-		super.destroy();
-		_initialized = false;
-		_parentState = null;
-		closeCallback = null;
+		return _bgColor;
+	}
+
+	@:noCompletion
+	override function set_bgColor(Value:FlxColor):FlxColor
+	{
+		if (FlxG.renderTile && _bgSprite != null)
+			_bgSprite.pixels.setPixel32(0, 0, Value);
+
+		return _bgColor = Value;
 	}
 }

@@ -1,172 +1,140 @@
 package flixel.system.frontEnds;
 
 import flixel.FlxG;
-import flixel.system.debug.LogStyle;
+import flixel.system.debug.log.LogStyle;
+import flixel.system.FlxAssets;
+import haxe.Log;
 import haxe.PosInfos;
 
 class LogFrontEnd
 {
-	public function new() 
-	{ 
-		// Create functions that take a variable amount of arguments
-		add = Reflect.makeVarArgs(_add);
-		warn = Reflect.makeVarArgs(_warn);
-		error = Reflect.makeVarArgs(_error);
-		notice = Reflect.makeVarArgs(_notice);
-		
-		_oldTrace = haxe.Log.trace;
-	}
-	
 	/**
-	 * Log data to the debugger. Example: <code>FlxG.add("Test", "1", "2", "3");</code> - will turn into "Test 1 2 3".
-	 * Infinite amount of arguments allowed, they will be pieced together to one String. 
+	 * Whether everything you trace() is being redirected into the log window.
 	 */
-	public var add:Dynamic;
-	
-	inline private function _add(Data:Array<Dynamic>):Void
+	public var redirectTraces(default, set):Bool = false;
+
+	var _standardTraceFunction:Dynamic->?PosInfos->Void;
+
+	public inline function add(Data:Dynamic):Void
 	{
-		#if !FLX_NO_DEBUG
-		advanced(Data, LogStyle.NORMAL); 
+		#if FLX_DEBUG
+		advanced(Data, LogStyle.NORMAL);
 		#end
 	}
-	
-	/**
-	 * Add a warning to the debugger. Example: <code>FlxG.log.warn("Test", "1", "2", "3");</code> - will turn into "[WARNING] Test 1 2 3".
-	 * Infinite amount of arguments allowed, they will be pieced together to one String. 
-	 */
-	public var warn:Dynamic;
-	
-	inline private function _warn(Data:Array<Dynamic>):Void
+
+	public inline function warn(Data:Dynamic):Void
 	{
-		#if !FLX_NO_DEBUG
-		advanced(Data, LogStyle.WARNING, true); 
+		#if FLX_DEBUG
+		advanced(Data, LogStyle.WARNING, true);
 		#end
 	}
-	
-	/**
-	 * Add an error to the debugger. Example: <code>FlxG.log.error("Test", "1", "2", "3");</code> - will turn into "[ERROR] Test 1 2 3".
-	 * Infinite amount of arguments allowed, they will be pieced together to one String. 
-	 */
-	public var error:Dynamic;
-	
-	inline private function _error(Data:Array<Dynamic>):Void
+
+	public inline function error(Data:Dynamic):Void
 	{
-		#if !FLX_NO_DEBUG
-		advanced(Data, LogStyle.ERROR, true); 
+		#if FLX_DEBUG
+		advanced(Data, LogStyle.ERROR, true);
 		#end
 	}
-	
-	/**
-	 * Add a notice to the debugger. Example: <code>FlxG.log.notice("Test", "1", "2", "3");</code> - will turn into "[NOTICE] Test 1 2 3".
-	 * Infinite amount of arguments allowed, they will be pieced together to one String. 
-	 */
-	public var notice:Dynamic;
-	
-	inline private function _notice(Data:Array<Dynamic>):Void
+
+	public inline function notice(Data:Dynamic):Void
 	{
-		#if !FLX_NO_DEBUG
-		advanced(Data, LogStyle.NOTICE); 
+		#if FLX_DEBUG
+		advanced(Data, LogStyle.NOTICE);
 		#end
 	}
-	
+
 	/**
-	 * Add an advanced log message to the debugger by also specifying a <code>LogStyle</code>. Backend to <code>FlxG.log.add(), FlxG.log.warn(), FlxG.log.error() and FlxG.log.notice()</code>.
+	 * Add an advanced log message to the debugger by also specifying a LogStyle. Backend to FlxG.log.add(), FlxG.log.warn(), FlxG.log.error() and FlxG.log.notice().
+	 *
 	 * @param	Data  		Any Data to log.
-	 * @param  	Style   	The <code>LogStyle</code> to use, for example <code>LogStyle.WARNING</code>. You can also create your own by importing the <code>LogStyle</code> class.
+	 * @param  	Style   	The LogStyle to use, for example LogStyle.WARNING. You can also create your own by importing the LogStyle class.
 	 * @param  	FireOnce   	Whether you only want to log the Data in case it hasn't been added already
-	 */ 
+	 */
 	public function advanced(Data:Dynamic, ?Style:LogStyle, FireOnce:Bool = false):Void
 	{
-		#if !FLX_NO_DEBUG
+		#if FLX_DEBUG
 		if (FlxG.game.debugger == null)
 		{
-			_oldTrace(Data);
+			_standardTraceFunction(Data);
 			return;
 		}
-		
+
 		if (Style == null)
 		{
 			Style = LogStyle.NORMAL;
 		}
-		
+
 		if (!Std.is(Data, Array))
 		{
-			Data = [Data]; 
+			Data = [Data];
 		}
-		
+
 		if (FlxG.game.debugger.log.add(Data, Style, FireOnce))
 		{
-			#if !FLX_NO_SOUND_SYSTEM
+			#if (FLX_SOUND_SYSTEM && !FLX_UNIT_TEST)
 			if (Style.errorSound != null)
 			{
-				FlxG.sound.play(Style.errorSound);
+				var sound = FlxAssets.getSound(Style.errorSound);
+				if (sound != null)
+				{
+					FlxG.sound.load(sound).play();
+				}
 			}
 			#end
-			
-			if (Style.openConsole) 
+
+			if (Style.openConsole)
 			{
 				FlxG.debugger.visible = true;
 			}
-			
-			if (Reflect.isFunction(Style.callbackFunction))
+
+			if (Style.callbackFunction != null)
 			{
-				Reflect.callMethod(null, Style.callbackFunction, []);
+				Style.callbackFunction();
 			}
 		}
 		#end
 	}
-	
+
 	/**
 	 * Clears the log output.
 	 */
-	inline public function clear():Void
+	public inline function clear():Void
 	{
-		#if !FLX_NO_DEBUG
+		#if FLX_DEBUG
 		FlxG.game.debugger.log.clear();
 		#end
 	}
-	
-	/**
-	 * Whether everything you <code>trace()</code> is being redirected into the log window.
-	 * True by default.
-	 */
-	public var redirectTraces(default, set):Bool = false;
-	/**
-	 * Internal var used to undo the redirection of traces.
-	 */
-	private var _oldTrace:Dynamic;	
-	
-	private function set_redirectTraces(Redirect:Bool):Bool
+
+	@:allow(flixel.FlxG)
+	function new()
 	{
-		if (Redirect)
-		{
-			haxe.Log.trace = processTraceData;
-		}
-		else 
-		{
-			haxe.Log.trace = _oldTrace;
-		}
-		
+		_standardTraceFunction = haxe.Log.trace;
+	}
+
+	inline function set_redirectTraces(Redirect:Bool):Bool
+	{
+		Log.trace = (Redirect) ? processTraceData : _standardTraceFunction;
 		return redirectTraces = Redirect;
 	}
-	
+
 	/**
-	 * Internal function used as a interface between <code>trace()</code> and <code>add()</code>.
+	 * Internal function used as a interface between trace() and add().
+	 *
 	 * @param	Data	The data that has been traced
-	 * @param	Inf		Information about the position at which <code>trace()</code> was called
+	 * @param	Inf		Information about the position at which trace() was called
 	 */
-	private function processTraceData(Data:Dynamic, ?Inf:PosInfos):Void
+	function processTraceData(Data:Dynamic, ?Info:PosInfos):Void
 	{
 		var paramArray:Array<Dynamic> = [Data];
-		
-		if (Inf.customParams != null) 
+
+		if (Info.customParams != null)
 		{
-			for (i in Inf.customParams)
+			for (i in Info.customParams)
 			{
 				paramArray.push(i);
 			}
 		}
-		
-		Reflect.callMethod(this, add, paramArray);
+
+		advanced(paramArray, LogStyle.NORMAL);
 	}
 }

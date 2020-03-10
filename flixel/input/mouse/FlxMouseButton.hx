@@ -1,79 +1,57 @@
 package flixel.input.mouse;
 
-import flash.events.MouseEvent;
+#if FLX_MOUSE
 import flixel.FlxG;
+import flixel.input.FlxSwipe;
+import flixel.util.FlxDestroyUtil;
+import flixel.math.FlxPoint;
 
-/**
- * A helper class for mouse input
- */
-class FlxMouseButton
+class FlxMouseButton extends FlxInput<Int> implements IFlxDestroyable
 {
-	inline static public var FAST_PRESS_RELEASE:Int = -2;
-	inline static public var JUST_RELEASED:Int = -1;
-	inline static public var RELEASED:Int = 0;
-	inline static public var PRESSED:Int = 1;
-	inline static public var JUST_PRESSED:Int = 2;
+	public static function getByID(id:FlxMouseButtonID):FlxMouseButton
+	{
+		return switch (id)
+		{
+			case LEFT: FlxG.mouse._leftButton;
+			#if FLX_MOUSE_ADVANCED
+			case MIDDLE: FlxG.mouse._middleButton;
+			case RIGHT: FlxG.mouse._rightButton;
+			#else
+			case _: return null;
+			#end
+		}
+	}
+
+	public var justPressedPosition(default, null) = FlxPoint.get();
+	public var justPressedTimeInTicks(default, null):Int = -1;
 
 	/**
-	 * The current state of this mouse button.
+	 * Updates the last and current state of this mouse button.
 	 */
-	public var current:Int = RELEASED;
-	/**
-	 * The last state of this mouse button.
-	 */
-	public var last:Int = RELEASED;
-	
-	/**
-	 * Whether this is the left mouse button.
-	 */
-	private var _isLeftMouse:Bool = false;
-	
-	public function new(IsLeftMouse:Bool = false)
+	override public function update():Void
 	{
-		_isLeftMouse = IsLeftMouse;
-	}
-	
-	/**
-	 * Upates the last and current state of this mouse button.
-	 */
-	public function update():Void
-	{
-		if (last == JUST_RELEASED && current == JUST_RELEASED)
+		super.update();
+
+		if (justPressed)
 		{
-			current = RELEASED;
+			justPressedPosition.set(FlxG.mouse.screenX, FlxG.mouse.screenY);
+			justPressedTimeInTicks = FlxG.game.ticks;
 		}
-		else if (last == JUST_PRESSED && current == JUST_PRESSED)
+		#if FLX_POINTER_INPUT
+		else if (justReleased)
 		{
-			current = PRESSED;
-		}
-		else if (last == FAST_PRESS_RELEASE && current == FAST_PRESS_RELEASE)
-		{
-			current = RELEASED;
-		}
-		
-		last = current;
-	}
-	
-	/**
-	 * Internal event handler for input and focus.
-	 * @param 	FlashEvent Flash mouse event.
-	 */
-	public function onDown(FlashEvent:MouseEvent):Void
-	{
-		#if !FLX_NO_DEBUG
-		if (_isLeftMouse && FlxG.debugger.visible)
-		{
-			if (FlxG.game.debugger.hasMouse)
-			{
-				return;
-			}
-			if (FlxG.game.debugger.watch.editing)
-			{
-				FlxG.game.debugger.watch.submit();
-			}
+			FlxG.swipes.push(new FlxSwipe(ID, justPressedPosition, FlxG.mouse.getScreenPosition(), justPressedTimeInTicks));
 		}
 		#end
-		
+	}
+
+	public inline function destroy():Void
+	{
+		justPressedPosition = FlxDestroyUtil.put(justPressedPosition);
+	}
+
+	public function onDown(_):Void
+	{
 		// Check for replay cancel keys
 		#if FLX_RECORD
 		if (FlxG.game.replaying && FlxG.vcr.cancelKeys != null)
@@ -82,84 +60,32 @@ class FlxMouseButton
 			{
 				if (key == "MOUSE" || key == "ANY")
 				{
-					if (FlxG.vcr.replayCallback != null)
-					{
-						FlxG.vcr.replayCallback();
-						FlxG.vcr.replayCallback = null;
-					}
-					else
-					{
-						FlxG.vcr.stopReplay();
-					}
+					FlxG.vcr.cancelReplay();
 					break;
 				}
 			}
-			return;
-		}
-		#end
-		
-		if (current > RELEASED) 
-		{
-			current = PRESSED;
-		}
-		else 
-		{
-			current = JUST_PRESSED;
-		}
-	}
-	
-	/**
-	 * Internal event handler for input and focus.
-	 * @param FlashEvent Flash mouse event.
-	 */
-	public function onUp(?FlashEvent:MouseEvent):Void
-	{
-		#if !FLX_NO_DEBUG
-		if ((FlxG.debugger.visible && FlxG.game.debugger.hasMouse) 
-			#if (FLX_RECORD) || FlxG.game.replaying #end)
-		{
-			return;
 		}
 		#end
 
-		if (current == JUST_PRESSED)
-		{
-			current = FAST_PRESS_RELEASE;
-		}
-		else if (current > RELEASED)
-		{
-			current = JUST_RELEASED;
-		}
-		else
-		{
-			current = RELEASED;
-		}
+		if (FlxG.mouse.enabled)
+			press();
 	}
-	
-	/**
-	 * Resets the just pressed/just released flags and sets mouse to not pressed.
-	 */
-	inline public function reset():Void
+
+	public function onUp(?_):Void
 	{
-		current = RELEASED;
-		last = RELEASED;
+		if (FlxG.mouse.enabled)
+			release();
 	}
-	
-	/**
-	 * Check to see if the button is pressed.
-	 * @return 	Whether the button is pressed.
-	 */
-	inline public function pressed():Bool { return current > RELEASED; }
+}
+#end
 
-	/**
-	 * Check to see if the button was just pressed.
-	 * @return 	Whether the button was just pressed.
-	 */
-	inline public function justPressed():Bool { return (current == JUST_PRESSED || current == FAST_PRESS_RELEASE); }
-
-	/**
-	 * Check to see if the button was just released.
-	 * @return 	Whether the button was just released.
-	 */
-	inline public function justReleased():Bool { return (current == JUST_RELEASED || current == FAST_PRESS_RELEASE); }
+/**
+ * These IDs are negative to avoid overlaps with possible touch point IDs.
+ */
+@:enum
+abstract FlxMouseButtonID(Int) to Int
+{
+	var LEFT = -1;
+	var MIDDLE = -2;
+	var RIGHT = -3;
 }

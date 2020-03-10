@@ -6,142 +6,173 @@ package flixel.util;
 class FlxArrayUtil
 {
 	/**
-	 * Function to search for a specified element in an array. This is faster than <code>Lambda.indexOf()</code>
-	 * on the flash target because it uses the the native array <code>indexOf()</code> method.
-	 * 
-	 * @param	array		The array.
-	 * @param	whatToFind	The element you're looking for.
-	 * @param 	fromIndex	The index to start the search from (optional, for optimization).
-	 * @return	The index of the element within the array. -1 if it wasn't found.
-	 */
-	@:generic static public function indexOf<T>(array:Array<T>, whatToFind:T, fromIndex:Int = 0):Int
-	{
-		#if flash
-		return untyped array.indexOf(whatToFind, fromIndex);
-		#else
-		var index:Int = -1;
-		var len:Int = array.length;
-		for (i in fromIndex...len)
-		{
-			if (array[i] == whatToFind)
-			{
-				index = i;
-				break;
-			}
-		}
-		return index;
-		#end
-	}
-	
-	/**
 	 * Sets the length of an array.
-	 * 
+	 *
 	 * @param	array		The array.
 	 * @param	newLength	The length you want the array to have.
 	 */
-	@:generic static public function setLength<T>(array:Array<T>, newLength:Int):Void
+	@:generic
+	public static function setLength<T>(array:Array<T>, newLength:Int):Array<T>
 	{
-		if (newLength < 0) return;
+		if (newLength < 0)
+			return array;
+
 		var oldLength:Int = array.length;
 		var diff:Int = newLength - oldLength;
-		if (diff < 0)
-		{
-			#if flash
-			untyped array.length = newLength;
-			#else
-			diff = -diff;
-			for (i in 0...diff)
-			{
-				array.pop();
-			}
-			#end
-		}
+		if (diff >= 0)
+			return array;
+
+		#if flash
+		untyped array.length = newLength;
+		#else
+		diff = -diff;
+		for (i in 0...diff)
+			array.pop();
+		#end
+
+		return array;
 	}
-	
+
 	/**
-	 * Deprecated; please use FlxRandom.shuffleArray() instead.
-	 * Shuffles the entries in an array into a new random order.
-	 * 
-	 * @param	Objects			An array to shuffle.
-	 * @param	HowManyTimes	How many swaps to perform during the shuffle operation.  A good rule of thumb is 2-4 times the number of objects in the list.
-	 * @return	The newly shuffled array.
-	 */
-	@:generic inline static public function shuffle<T>(Objects:Array<T>, HowManyTimes:Int):Array<T>
-	{
-		return FlxRandom.shuffleArray( Objects, HowManyTimes );
-	}
-	
-	/**
-	 * Deprecated; please use FlxRandom.getObject() instead.
-	 * Fetch a random entry from the given array from StartIndex to EndIndex.
-	 * 
-	 * @param	Objects			An array from which to select a random entry.
-	 * @param	StartIndex		Optional index from which to restrict selection. Default value is 0, or the beginning of the array.
-	 * @param	EndIndex		Optional index at which to restrict selection. Ignored if 0, which is the default value.
-	 * @return	The random object that was selected.
-	 */
-	@:generic inline static public function getRandom<T>(Objects:Array<T>, StartIndex:Int = 0, EndIndex:Int = 0):T
-	{
-		return FlxRandom.getObject( Objects, StartIndex, EndIndex );
-	}
-	
-	/**
-	 * Safely removes an element from an array by swapping it with the last element and calling pop<code>()</code>
-	 * (won't do anything if the array is not part of the array). This is a lot faster than regular <code>splice()</code>, 
+	 * Safely removes an element from an array by swapping it with the last element and calling `pop()`
+	 * (won't do anything if the element is not in the array). This is a lot faster than regular `splice()`,
 	 * but it can only be used on arrays where order doesn't matter.
-	 * 
+	 *
 	 * @param	array	The array to remove the element from
 	 * @param 	element	The element to remove from the array
 	 * @return	The array
 	 */
-	@:generic static public function fastSplice<T>(array:Array<T>, element:T):Array<T>
+	@:generic
+	public static inline function fastSplice<T>(array:Array<T>, element:T):Array<T>
 	{
-		var index = indexOf(array, element);
-		if (index >= 0)
-		{
-			array[index] = array[array.length - 1]; // swap element to remove and last element
-			array.pop();
-		}
+		var index = array.indexOf(element);
+		if (index != -1)
+			return swapAndPop(array, index);
 		return array;
 	}
-	
+
 	/**
-	 * Split a comma-separated string into an array of ints
-	 * 
-	 * @param	data string formatted like this: "1,2,5,-10,120,27"
-	 * @return	an array of ints
+	 * Removes an element from an array by swapping it with the last element and calling `pop()`.
+	 * This is a lot faster than regular `splice()`, but it can only be used on arrays where order doesn't matter.
+	 *
+	 * IMPORTANT: always count down from length to zero if removing elements from within a loop
+	 *
+	 * ```haxe
+	 * using flixel.util.FlxArrayUtil;
+	 *
+	 * var i = array.length;
+	 * while (i-- > 0)
+	 * {
+	 *      if (array[i].shouldRemove)
+	 *      {
+	 *           array.swapAndPop(i);
+	 *      }
+	 * }
+	 * ```
+	 *
+	 * @param	array	The array to remove the element from
+	 * @param 	index	The index of the element to be removed from the array
+	 * @return	The array
 	 */
-	static public function intFromString(data:String):Array<Int>
+	@:generic
+	public static inline function swapAndPop<T>(array:Array<T>, index:Int):Array<T>
 	{
-		if (data != null && data != "") 
-		{
-			var strArray:Array<String> = data.split(",");
-			var iArray:Array<Int> = new Array<Int>();
-			for (str in strArray) {
-				iArray.push(Std.parseInt(str));
-			}
-			return iArray;
-		}
-		return null;
+		array[index] = array[array.length - 1]; // swap element to remove and last element
+		array.pop();
+		return array;
 	}
-	
+
 	/**
-	 * Split a comma-separated string into an array of floats
-	 * 
-	 * @param	data string formatted like this: "1.0,2.1,5.6,1245587.9,-0.00354"
-	 * @return
-	 */	
-	static public function floatFromString(data:String):Array<Float>
+	 * Clears an array structure, but leaves the object data untouched
+	 * Useful for cleaning up temporary references to data you want to preserve.
+	 * WARNING: Can lead to memory leaks.
+	 *
+	 * @param	array		The array to clear out
+	 * @param	Recursive	Whether to search for arrays inside of arr and clear them out, too
+	 */
+	public static function clearArray<T>(array:Array<T>, recursive:Bool = false):Array<T>
 	{
-		if (data != null && data != "") 
+		if (array == null)
+			return array;
+
+		if (recursive)
 		{
-			var strArray:Array<String> = data.split(",");
-			var fArray:Array<Float> = new Array<Float>();
-			for (str in strArray) {
-				fArray.push(Std.parseFloat(str));
+			while (array.length > 0)
+			{
+				var thing:T = array.pop();
+				if (Std.is(thing, Array))
+					clearArray(array, recursive);
 			}
-			return fArray;
 		}
-		return null;
+		else
+		{
+			while (array.length > 0)
+				array.pop();
+		}
+
+		return array;
+	}
+
+	/**
+	 * Flattens 2D arrays into 1D arrays.
+	 * Example: `[[1, 2], [3, 2], [1, 1]]` -> `[1, 2, 3, 2, 1, 1]`
+	 */
+	@:generic
+	public static function flatten2DArray<T>(array:Array<Array<T>>):Array<T>
+	{
+		var result = [];
+		for (innerArray in array)
+			for (element in innerArray)
+				result.push(element);
+		return result;
+	}
+
+	/**
+	 * Compares the contents with `==` to see if the two arrays are the same.
+	 * Also takes null arrays and the length of the arrays into account.
+	 */
+	public static function equals<T>(array1:Array<T>, array2:Array<T>):Bool
+	{
+		if (array1 == null && array2 == null)
+			return true;
+		if (array1 == null && array2 != null)
+			return false;
+		if (array1 != null && array2 == null)
+			return false;
+		if (array1.length != array2.length)
+			return false;
+
+		for (i in 0...array1.length)
+			if (array1[i] != array2[i])
+				return false;
+
+		return true;
+	}
+
+	/**
+	 * Returns the last element of an array or `null` if the array is `null` / empty.
+	 */
+	public static function last<T>(array:Array<T>):Null<T>
+	{
+		if (array == null || array.length == 0)
+			return null;
+		return array[array.length - 1];
+	}
+
+	/**
+	 * Pushes the element into the array (and if the array is null, creates it first) and returns the array.
+	 * @since 4.6.0
+	 */
+	public static function safePush<T>(array:Array<T>, element:T):Array<T>
+	{
+		if (array == null)
+			array = [];
+		array.push(element);
+		return array;
+	}
+
+	public static inline function contains<T>(array:Array<T>, element:T):Bool
+	{
+		return array.indexOf(element) != -1;
 	}
 }

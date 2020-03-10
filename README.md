@@ -1,117 +1,30 @@
-﻿![](https://raw.github.com/HaxeFlixel/haxeflixel.com/master/src/files/images/flixel-logos/HaxeFlixel.png)
-=
-###Related:    [flixel-addons](https://github.com/HaxeFlixel/flixel-addons) | [flixel-demos](https://github.com/HaxeFlixel/flixel-demos) | [flixel-tools](https://github.com/HaxeFlixel/flixel-tools) | [flixel-ui](https://github.com/HaxeFlixel/flixel-ui)
-______________________________________________________
+[![](https://raw.github.com/HaxeFlixel/haxeflixel.com/master/src/files/images/flixel-logos/HaxeFlixel.png)](http://haxeflixel.com/)
 
-###Getting Started
+[flixel](https://github.com/HaxeFlixel/flixel) | [addons](https://github.com/HaxeFlixel/flixel-addons) | [ui](https://github.com/HaxeFlixel/flixel-ui) | [demos](https://github.com/HaxeFlixel/flixel-demos) | [tools](https://github.com/HaxeFlixel/flixel-tools) | [templates](https://github.com/HaxeFlixel/flixel-templates) | [docs](https://github.com/HaxeFlixel/flixel-docs) | [haxeflixel.com](https://github.com/HaxeFlixel/haxeflixel.com)
 
-You can read our getting started docs [here](http://haxeflixel.com/wiki/getting-started).
+[![Haxelib Version](https://img.shields.io/github/tag/HaxeFlixel/flixel.svg?label=haxelib)](http://lib.haxe.org/p/flixel) [![Patreon](https://img.shields.io/badge/donate-patreon-blue.svg)](https://www.patreon.com/haxeflixel) [![](https://img.shields.io/discord/162395145352904705.svg?logo=discord)](https://discordapp.com/invite/rqEBAgF) [![Build Status](https://img.shields.io/travis/HaxeFlixel/flixel.svg)](https://travis-ci.org/HaxeFlixel/flixel)
 
-It is recomended to use Haxeflixel via [haxelib](http://lib.haxe.org/p/flixel). Just run `haxelib install flixel` once you have it installed.
+[![](images/showcase.png)](http://www.haxeflixel.com/showcase)
 
-###Changes for HaxeFlixel 3.0
+## Links
 
-This is the third big update to HaxeFlixel. Here are the biggest changes:
-- New [Front End](https://github.com/HaxeFlixel/flixel/tree/master/flixel/system/frontEnds) classes to better encapsulate FlxG functionality.
-- Refactored the [animation system](https://github.com/HaxeFlixel/flixel/tree/master/flixel/animation).
-- Better support for nested sprites via [FlxSpriteGroup](https://github.com/HaxeFlixel/flixel/blob/master/flixel/group/FlxSpriteGroup.hx). FlxSpriteGroups can be contained within other groups, and behave like FlxSprites. They are expensive though, use them sparringly.
-- Moved lots of stuff into [utility classes](https://github.com/HaxeFlixel/flixel/tree/master/flixel/util) to reduce clutter in core classes.
-- Continued optimizations for cpp targets.
+Here are the most important links to get you started with HaxeFlixel:
 
-###Upgrading from previous versions
+- [Getting Started](https://haxeflixel.com/documentation/getting-started/)
+- [Documentation](https://haxeflixel.com/documentation)
+- [API](https://api.haxeflixel.com/)
+- [Community](https://haxeflixel.com/documentation/community/)
 
-You can find [upgrade instructions here](http://haxeflixel.com/documentation/upgrade-guide/).
+If you want to contribute code or report an issue, please check our [CONTRIBUTING.md](https://github.com/HaxeFlixel/flixel/blob/dev/.github/CONTRIBUTING.md).
 
-If you wish to contribute to our documentation, you can edit the [upgrade docs on github](https://github.com/HaxeFlixel/haxeflixel.com/blob/cfaf4c1b74dbb34b39333ad67a8e0ce9b7fdc203/src/documents/documentation/01_community/11-upgrade-guide.html.md).
+## Platforms
 
-###For Developers
+Thanks to being built on top of [Haxe](https://haxe.org/) and [OpenFL](http://www.openfl.org/), HaxeFlixel can target the following platforms _natively_:
 
-Make sure you're using latest version of [Haxe, haxelib and OpenFl](http://haxeflixel.com/comment/2584#comment-2584). You should also read the [haxelib guide](http://haxe.org/doc/haxelib/using_haxelib).
+![](images/platforms.png)
 
-Clone this repository by running `haxelib git flixel https://github.com/HaxeFlixel/flixel dev`.
+## About
 
-We recommended that you use a GUI application to manage your changes, for example [SourceTree](http://www.sourcetreeapp.com/).
+HaxeFlixel has its roots in the original [ActionScript 3 version of Flixel](https://github.com/AdamAtomic/flixel), created by [Adam “Atomic” Saltsman](http://www.adamatomic.com/). It was started by [Alexander Hohlov](https://github.com/beeblerox) in 2011, initially as a straightforward Haxe port of the AS3 codebase and Richard Davey's [Flixel Power Tools](http://www.photonstorm.com/flixel-power-tools).
 
-###Current Build Status [![Build Status](https://travis-ci.org/HaxeFlixel/flixel.png)](https://travis-ci.org/HaxeFlixel/flixel)
-
-______________________________________________________
-###Links
-
-In case you're looking for resources, help, or just want to interact with the community:
-
-- [HaxeFlixel.com](http://www.haxeflixel.com/)
-- [Forums](http://www.haxeflixel.com/forum)
-- [Documentation](http://www.haxeflixel.com/documentation)
-- [@HaxeFlixel on Twitter](https://twitter.com/HaxeFlixel)
-- [#haxeflixel IRC channel](http://webchat.freenode.net/?channels=haxeflixel)
-
-______________________________________________________
-
-HaxeFlixel was created by Alexander Hohlov, also known as [Beeblerox](https://github.com/beeblerox) who continues to be the project lead. The codebase started largely from a Haxe port of the [AS3 version of Flixel](https://github.com/AdamAtomic/flixel) written by [Adam “Atomic” Saltsman](http://www.adamatomic.com/) and [Richard Davey's](http://www.photonstorm.com/flixel-power-tools) [Power Tools](https://github.com/photonstorm/Flixel-Power-Tools)
-
-Special thanks go to the community contributors [Werdn](https://github.com/werdn), [crazysam](https://github.com/crazysam), [impaler](https://github.com/impaler), [ProG4mr](https://github.com/ProG4mr), [Gama11](https://github.com/Gama11), [sergey-miryanov](https://github.com/sergey-miryanov) and more.
-
-HaxeFlixel presents substantial enhancements from the original Flixel AS3 code:
-
-- Use of a robust and powerful, opensource language
-- Flexible Asset Management System
-- Cross-platform development for Linux, Mac and Windows
-- Texture Atlas and Layer enhancement for cpp targets
-- Integrated and robust Tween System
-- Access to OpenFL native extensions
-- Compile to Mobile and Desktop targets with native code through OpenFL
-- Impressive Native Performance using GPU accelerated drawTiles implimentation in cpp targets
-- A powerful debugger with a console as well as an advanced logging system
-- A vibrant community that keeps updating the engine and adding new features to it
-
-
-###Runtime Targets
-The current possible targets are:
-
-<table>
-  <tr>
-    <th>Mobile</th>
-    <th>Desktop</th>
-    <th>Web</th>
-  </tr>
-  <tr>
-    <td>Blackberry</td>
-    <td>Linux</td>
-    <td>Flash</td>
-  </tr>
-  <tr>
-    <td>iOS</td>
-    <td>Mac</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>Android</td>
-    <td>Windows</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td>WebOS</td>
-    <td>Neko</td>
-    <td></td>
-  </tr>
-</table>
-
-There's also experimental support for HTML5.
-
-______________________________________________________
-
-###Basic Features
-
-- Display thousands of moving objects
-- Basic collisions between objects
-- Group objects together for simplicity
-- Easily generate and emit particles
-- Create game levels using tilemaps
-- Text display, save games, scrolling
-- Mouse, keyboard, controller, and touch inputs
-- Math & color utilities
-- Record and play back replays
-- Powerful interactive debugger
-- Camera system for split screen
-- Pathfinding and following
-- Easy object recycling
+Thanks to the efforts of the [core team](https://github.com/orgs/HaxeFlixel/people) as well as [over 100 contributors](https://github.com/HaxeFlixel/flixel/graphs/contributors), today's version of HaxeFlixel far surpasses the capabilities of the original. Not only has the core engine seen many substantial improvements and new features, there is also a far richer ecosystem with additional libaries and [over 80 demo projects](https://github.com/HaxeFlixel/flixel-demos) to learn from.

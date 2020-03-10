@@ -1,80 +1,116 @@
-﻿package flixel.tweens.misc;
+package flixel.tweens.misc;
 
 import flixel.tweens.FlxTween;
-import flixel.tweens.FlxEase;
 
 /**
- * Tweens a numeric public property of an Object.
+ * Tweens multiple numeric properties of an object simultaneously.
  */
 class VarTween extends FlxTween
 {
-	/**
-	 * Constructor.
-	 * @param	complete	Optional completion callback.
-	 * @param	type		Tween type.
-	 */
-	public function new(complete:CompleteCallback = null, type:Int = 0) 
+	var _object:Dynamic;
+	var _properties:Dynamic;
+	var _propertyInfos:Array<VarTweenProperty>;
+
+	function new(options:TweenOptions, ?manager:FlxTweenManager)
 	{
-		super(0, type, complete);
+		super(options, manager);
 	}
-	
-	override public function destroy():Void 
-	{
-		super.destroy();
-		_object = null;
-	}
-	
+
 	/**
-	 * Tweens a numeric public property.
-	 * @param	object		The object containing the property.
-	 * @param	property	The name of the property (eg. "x").
-	 * @param	to			Value to tween to.
+	 * Tweens multiple numeric public properties.
+	 *
+	 * @param	object		The object containing the properties.
+	 * @param	properties	An object containing key/value pairs of properties and target values.
 	 * @param	duration	Duration of the tween.
-	 * @param	ease		Optional easer function.
 	 */
-	public function tween(object:Dynamic, property:String, to:Float, duration:Float, ease:EaseFunction = null):VarTween
+	public function tween(object:Dynamic, properties:Dynamic, duration:Float):VarTween
 	{
+		#if FLX_DEBUG
+		if (object == null)
+			throw "Cannot tween variables of an object that is null.";
+		else if (properties == null)
+			throw "Cannot tween null properties.";
+		#end
+
 		_object = object;
-		_ease = ease;
-		
-		// Check to make sure we have valid parameters
-		if (!Reflect.isObject(object))
-		{
-			throw "A valid object was not passed.";
-		}
-		
-		_property = property;
-		
-		// Check if the variable is a number
-		if (Reflect.getProperty(_object, property) == null)
-		{
-			throw "The Object does not have the property\"" + property + "\", or it is not accessible.";
-		}
-		
-		var a = Reflect.getProperty(_object, property);
-		
-		if (Math.isNaN(a)) 
-		{
-			throw "The property \"" + property + "\" is not numeric.";
-		}
-		
-		_start = a;
-		_range = to - _start;
-		_target = duration;
+		_properties = properties;
+		_propertyInfos = [];
+		this.duration = duration;
 		start();
 		return this;
 	}
-	
-	/** @private Updates the Tween. */
-	override public function update():Void
+
+	override function update(elapsed:Float):Void
 	{
-		super.update();
-		Reflect.setProperty(_object, _property, (_start + _range * _t));
+		var delay:Float = (executions > 0) ? loopDelay : startDelay;
+
+		// Leave properties alone until delay is over
+		if (_secondsSinceStart < delay)
+			super.update(elapsed);
+		else
+		{
+			// We don't initialize() in tween() because otherwise the start values
+			// will be inaccurate with delays
+			if (_propertyInfos.length == 0)
+				initializeVars();
+
+			super.update(elapsed);
+
+			for (info in _propertyInfos)
+				Reflect.setProperty(info.object, info.field, info.startValue + info.range * scale);
+		}
 	}
-	
-	// Tween information.
-	private var _object:Dynamic;
-	private var _property:String;
-	private var _start:Float;
-	private var _range:Float;
+
+	function initializeVars():Void
+	{
+		var fieldPaths:Array<String>;
+		if (Reflect.isObject(_properties))
+			fieldPaths = Reflect.fields(_properties);
+		else
+			throw "Unsupported properties container - use an object containing key/value pairs.";
+
+		for (fieldPath in fieldPaths)
+		{
+			var target = _object;
+			var path = fieldPath.split(".");
+			var field = path.pop();
+			for (component in path)
+			{
+				target = Reflect.getProperty(target, component);
+				if (!Reflect.isObject(target))
+					throw 'The object does not have the property "$component" in "$fieldPath"';
+			}
+
+			if (Reflect.getProperty(target, field) == null)
+				throw 'The object does not have the property "$field"';
+
+			var value:Dynamic = Reflect.getProperty(target, field);
+			if (Math.isNaN(value))
+				throw 'The property "$field" is not numeric.';
+
+			var targetValue:Dynamic = Reflect.getProperty(_properties, fieldPath);
+			_propertyInfos.push({
+				object: target,
+				field: field,
+				startValue: value,
+				range: targetValue - value
+			});
+		}
+	}
+
+	override public function destroy():Void
+	{
+		super.destroy();
+		_object = null;
+		_properties = null;
+		_propertyInfos = null;
+	}
+}
+
+private typedef VarTweenProperty =
+{
+	object:Dynamic,
+	field:String,
+	startValue:Float,
+	range:Float
 }

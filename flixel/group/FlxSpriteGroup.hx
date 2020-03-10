@@ -2,231 +2,241 @@ package flixel.group;
 
 import flash.display.BitmapData;
 import flash.display.BlendMode;
-import flash.geom.ColorTransform;
 import flixel.FlxCamera;
-import flixel.FlxG;
 import flixel.FlxSprite;
-import flixel.group.FlxTypedGroup;
-import flixel.system.FlxCollisionType;
-import flixel.system.layer.frames.FlxFrame;
-import flixel.util.FlxPoint;
+import flixel.graphics.frames.FlxFrame;
+import flixel.graphics.frames.FlxFramesCollection;
+import flixel.group.FlxGroup.FlxTypedGroup;
+import flixel.group.FlxGroup.FlxTypedGroupIterator;
+import flixel.math.FlxMath;
+import flixel.math.FlxPoint;
+import flixel.math.FlxRect;
+import flixel.system.FlxAssets.FlxGraphicAsset;
+import flixel.util.FlxColor;
+import flixel.util.FlxDestroyUtil;
+import flixel.util.FlxSort;
+
+typedef FlxSpriteGroup = FlxTypedSpriteGroup<FlxSprite>;
 
 /**
- * <code>FlxSpriteGroup</code> is a special <code>FlxGroup</code>
- * that can be treated like a <code>FlxSprite</code> due to having
- * x, y and alpha values. It can only contain <code>FlxSprites</code>.
+ * `FlxSpriteGroup` is a special `FlxSprite` that can be treated like
+ * a single sprite even if it's made up of several member sprites.
+ * It shares the `FlxTypedGroup` API, but it doesn't inherit from it.
  */
-class FlxSpriteGroup extends FlxSprite
+class FlxTypedSpriteGroup<T:FlxSprite> extends FlxSprite
 {
 	/**
-	 * The actual group which holds all sprites
+	 * The actual group which holds all sprites.
 	 */
-	public var group:FlxTypedGroup<FlxSprite>;
-	
+	public var group:FlxTypedGroup<T>;
+
 	/**
-	 * The link to a group's members array
+	 * The link to a group's `members` array.
 	 */
-	public var members(get, null):Array<FlxSprite>;
-	
+	public var members(get, never):Array<T>;
+
 	/**
-	 * The number of entries in the members array. For performance and safety you should check this 
-	 * variable instead of <code>members.length</code> unless you really know what you're doing!
+	 * The number of entries in the members array. For performance and safety you should check this
+	 * variable instead of `members.length` unless you really know what you're doing!
 	 */
-	public var length(get, null):Int;
-	
+	public var length(get, never):Int;
+
 	/**
-	 * The maximum capacity of this group. Default is 0, meaning no max capacity, and the group can just grow.
+	 * Whether to attempt to preserve the ratio of alpha values of group members, or set them directly through
+	 * the alpha property. Defaults to `false` (preservation).
+	 * @since 4.5.0
+	 */
+	public var directAlpha:Bool = false;
+
+	/**
+	 * The maximum capacity of this group. Default is `0`, meaning no max capacity, and the group can just grow.
 	 */
 	public var maxSize(get, set):Int;
-	
+
 	/**
 	 * Optimization to allow setting position of group without transforming children twice.
 	 */
-	private var _skipTransformChildren:Bool = false;
-	
+	var _skipTransformChildren:Bool = false;
+
 	/**
-	 * Create a new <code>FlxSpriteGroup</code>
-	 * 
-	 * @param	X			The initial X position of the group.
-	 * @param	Y			The initial Y position of the group
-	 * @param	MaxSize		Maximum amount of members allowed
+	 * Array of all the `FlxSprite`s that exist in this group for
+	 * optimization purposes / static typing on cpp targets.
+	 */
+	var _sprites:Array<FlxSprite>;
+
+	/**
+	 * @param   X         The initial X position of the group.
+	 * @param   Y         The initial Y position of the group.
+	 * @param   MaxSize   Maximum amount of members allowed.
 	 */
 	public function new(X:Float = 0, Y:Float = 0, MaxSize:Int = 0)
 	{
 		super(X, Y);
-		maxSize = MaxSize;
+		group = new FlxTypedGroup<T>(MaxSize);
+		_sprites = cast group.members;
 	}
-	
+
 	/**
 	 * This method is used for initialization of variables of complex types.
-	 * Don't forget to call super.initVars() if you'll override this method, 
-	 * or you'll get null object error and app will crash
+	 * Don't forget to call `super.initVars()` if you'll override this method,
+	 * or you'll get `null` object error and app will crash.
 	 */
-	override private function initVars():Void 
+	override function initVars():Void
 	{
-		collisionType	= FlxCollisionType.SPRITEGROUP;
-		offset			= new FlxPointHelper(this, offsetTransform);
-		origin			= new FlxPointHelper(this, originTransform);
-		scale			= new FlxPointHelper(this, scaleTransform);
-		scrollFactor	= new FlxPointHelper(this, scrollFactorTransform);
-		
+		flixelType = SPRITEGROUP;
+
+		offset = new FlxCallbackPoint(offsetCallback);
+		origin = new FlxCallbackPoint(originCallback);
+		scale = new FlxCallbackPoint(scaleCallback);
+		scrollFactor = new FlxCallbackPoint(scrollFactorCallback);
+
+		scale.set(1, 1);
 		scrollFactor.set(1, 1);
-	 	
+
 		initMotionVars();
 	}
-	
+
 	/**
-	 * WARNING: This will remove this object entirely. Use <code>kill()</code> if you want to disable it temporarily only and <code>reset()</code> it later to revive it.
-	 * Override this function to null out variables manually or call destroy() on class members if necessary. Don't forget to call super.destroy()!
+	 * **WARNING:** A destroyed `FlxBasic` can't be used anymore.
+	 * It may even cause crashes if it is still part of a group or state.
+	 * You may want to use `kill()` instead if you want to disable the object temporarily only and `revive()` it later.
+	 *
+	 * This function is usually not called manually (Flixel calls it automatically during state switches for all `add()`ed objects).
+	 *
+	 * Override this function to `null` out variables manually or call `destroy()` on class members if necessary.
+	 * Don't forget to call `super.destroy()`!
 	 */
 	override public function destroy():Void
 	{
-		if (offset != null)			
-		{ 
-			offset.destroy(); 
-			offset = null; 
-		}
-		if (origin != null)			{ origin.destroy(); origin = null; }
-		if (scale != null)			{ scale.destroy(); scale = null; }
-		if (scrollFactor != null)	{ scrollFactor.destroy(); scrollFactor = null; }
-		
-		if (group != null)			{ group.destroy(); group = null; }
-		
+		// normally don't have to destroy FlxPoints, but these are FlxCallbackPoints!
+		offset = FlxDestroyUtil.destroy(offset);
+		origin = FlxDestroyUtil.destroy(origin);
+		scale = FlxDestroyUtil.destroy(scale);
+		scrollFactor = FlxDestroyUtil.destroy(scrollFactor);
+
+		group = FlxDestroyUtil.destroy(group);
+		_sprites = null;
+
 		super.destroy();
 	}
-	
+
 	/**
-	 * Recursive cloning method: it will create copy of this group which will hold copies of all sprites
-	 * 
-	 * @param	NewSprite	optional sprite group to copy to
-	 * @return	copy of this sprite group
+	 * Recursive cloning method: it will create a copy of this group which will hold copies of all sprites
+	 *
+	 * @return  copy of this sprite group
 	 */
-	override public function clone(NewSprite:FlxSprite = null):FlxSpriteGroup 
+	override public function clone():FlxTypedSpriteGroup<T>
 	{
-		if (NewSprite == null || !Std.is(NewSprite, FlxSpriteGroup))
+		var newGroup = new FlxTypedSpriteGroup<T>(x, y, maxSize);
+		for (sprite in group.members)
 		{
-			NewSprite = new FlxSpriteGroup(0, 0, group.maxSize);
-		}
-		
-		var cloned:FlxSpriteGroup = cast NewSprite;
-		cloned.maxSize = group.maxSize;
-		
-		for (basic in group.members)
-		{
-			if (basic != null)
+			if (sprite != null)
 			{
-				cloned.add(basic.clone());
+				newGroup.add(cast sprite.clone());
 			}
 		}
-		return cloned;
+		return newGroup;
 	}
-	
+
 	/**
 	 * Check and see if any sprite in this group is currently on screen.
-	 * 
-	 * @param	Camera		Specify which game camera you want.  If null getScreenXY() will just grab the first global camera.
-	 * @return	Whether the object is on screen or not.
+	 *
+	 * @param   Camera   Specify which game camera you want. If `null`, it will just grab the first global camera.
+	 * @return  Whether the object is on screen or not.
 	 */
-	override public function onScreen(Camera:FlxCamera = null):Bool 
+	override public function isOnScreen(?Camera:FlxCamera):Bool
 	{
-		if (Camera == null)
+		for (sprite in _sprites)
 		{
-			Camera = FlxG.camera;
+			if (sprite != null && sprite.exists && sprite.visible && sprite.isOnScreen(Camera))
+				return true;
 		}
-		
-		var result:Bool = false;
-		for (sprite in group.members)
-		{
-			if (sprite != null && sprite.exists && sprite.visible)
-			{
-				result = result || sprite.onScreen(Camera);
-			}
-		}
-		
-		return result;
+
+		return false;
 	}
-	
+
 	/**
-	 * Checks to see if a point in 2D world space overlaps any <code>FlxSprite</code> object from this group.
-	 * 
-	 * @param	Point			The point in world space you want to check.
-	 * @param	InScreenSpace	Whether to take scroll factors into account when checking for overlap.
-	 * @param	Camera			Specify which game camera you want.  If null getScreenXY() will just grab the first global camera.
-	 * @return	Whether or not the point overlaps this group.
+	 * Checks to see if a point in 2D world space overlaps any `FlxSprite` object from this group.
+	 *
+	 * @param   Point           The point in world space you want to check.
+	 * @param   InScreenSpace   Whether to take scroll factors into account when checking for overlap.
+	 * @param   Camera          Specify which game camera you want. If `null`, it will just grab the first global camera.
+	 * @return  Whether or not the point overlaps this group.
 	 */
-	override public function overlapsPoint(point:FlxPoint, InScreenSpace:Bool = false, ?Camera:FlxCamera):Bool 
+	override public function overlapsPoint(point:FlxPoint, InScreenSpace:Bool = false, ?Camera:FlxCamera):Bool
 	{
 		var result:Bool = false;
-		for (sprite in group.members)
+		for (sprite in _sprites)
 		{
 			if (sprite != null && sprite.exists && sprite.visible)
 			{
 				result = result || sprite.overlapsPoint(point, InScreenSpace, Camera);
 			}
 		}
-		
+
 		return result;
 	}
-	
+
 	/**
-	 * Checks to see if a point in 2D world space overlaps any of <code>FlxSprite</code> object's current displayed pixels.
+	 * Checks to see if a point in 2D world space overlaps any of FlxSprite object's current displayed pixels.
 	 * This check is ALWAYS made in screen space, and always takes scroll factors into account.
-	 * 
-	 * @param	Point		The point in world space you want to check.
-	 * @param	Mask		Used in the pixel hit test to determine what counts as solid.
-	 * @param	Camera		Specify which game camera you want.  If null getScreenXY() will just grab the first global camera.
-	 * @return	Whether or not the point overlaps this object.
+	 *
+	 * @param   Point    The point in world space you want to check.
+	 * @param   Mask     Used in the pixel hit test to determine what counts as solid.
+	 * @param   Camera   Specify which game camera you want.  If `null`, it will just grab the first global camera.
+	 * @return  Whether or not the point overlaps this object.
 	 */
-	override public function pixelsOverlapPoint(point:FlxPoint, Mask:Int = 0xFF, ?Camera:FlxCamera):Bool 
+	override public function pixelsOverlapPoint(point:FlxPoint, Mask:Int = 0xFF, ?Camera:FlxCamera):Bool
 	{
 		var result:Bool = false;
-		for (sprite in group.members)
+		for (sprite in _sprites)
 		{
 			if (sprite != null && sprite.exists && sprite.visible)
 			{
 				result = result || sprite.pixelsOverlapPoint(point, Mask, Camera);
 			}
 		}
-		
+
 		return result;
 	}
-	
-	override public function update():Void 
+
+	override public function update(elapsed:Float):Void
 	{
+		group.update(elapsed);
+
 		if (moves)
-		{
-			updateMotion();
-		}
-		
-		group.update();
+			updateMotion(elapsed);
 	}
-	
-	override public function draw():Void 
+
+	override public function draw():Void
 	{
 		group.draw();
-		#if !FLX_NO_DEBUG
-		isDrawnDebug = false;
+
+		#if FLX_DEBUG
+		if (FlxG.debugger.drawDebug)
+			drawDebug();
 		#end
 	}
-	
+
 	/**
-	 * Replaces all pixels with specified Color with NewColor pixels. This operation is applied to every nested sprite from this group
-	 * 
-	 * @param	Color				Color to replace
-	 * @param	NewColor			New color
-	 * @param	FetchPositions		Whether we need to store positions of pixels which colors were replaced
-	 * @return	Array replaced pixels positions
+	 * Replaces all pixels with specified `Color` with `NewColor` pixels.
+	 * WARNING: very expensive (especially on big graphics) as it iterates over every single pixel.
+	 *
+	 * @param   Color            Color to replace
+	 * @param   NewColor         New color
+	 * @param   FetchPositions   Whether we need to store positions of pixels which colors were replaced.
+	 * @return  `Array` with replaced pixels positions
 	 */
-	override public function replaceColor(Color:Int, NewColor:Int, FetchPositions:Bool = false):Array<FlxPoint> 
+	override public function replaceColor(Color:Int, NewColor:Int, FetchPositions:Bool = false):Array<FlxPoint>
 	{
 		var positions:Array<FlxPoint> = null;
 		if (FetchPositions)
 		{
 			positions = new Array<FlxPoint>();
 		}
-		
+
 		var spritePositions:Array<FlxPoint>;
-		for (sprite in group.members)
+		for (sprite in _sprites)
 		{
 			if (sprite != null)
 			{
@@ -237,272 +247,306 @@ class FlxSpriteGroup extends FlxSprite
 				}
 			}
 		}
-		
+
 		return positions;
 	}
-	
-	#if !FLX_NO_DEBUG
+
 	/**
-	 * Just a helper variable to check if this group has already been drawn on debug layer
+	 * Adds a new `FlxSprite` subclass to the group.
+	 *
+	 * @param   Sprite   The sprite or sprite group you want to add to the group.
+	 * @return  The same object that was passed in.
 	 */
-	private var isDrawnDebug:Bool = false;
-	
-	/**
-	 * Override this function to draw custom "debug mode" graphics to the
-	 * specified camera while the debugger's visual mode is toggled on.
-	 * 
-	 * @param	Camera	Which camera to draw the debug visuals to.
-	 */
-	override public function drawDebugOnCamera(?Camera:FlxCamera):Void
+	public function add(Sprite:T):T
 	{
-		if (!isDrawnDebug)	
-		{
-			group.drawDebug();
-			isDrawnDebug = true;
-		}
-	}
-	#end
-	
-	/**
-	 * Adds a new <code>FlxSprite</code> subclass to the group.
-	 * 
-	 * @param	Object		The sprite or sprite group you want to add to the group.
-	 * @return	The same object that was passed in.
-	 */
-	public function add(Sprite:FlxSprite):FlxSprite
-	{
-		Sprite.x += x;
-		Sprite.y += y;
-		Sprite.alpha *= alpha;
-		Sprite.scrollFactor.copyFrom(scrollFactor);
-		
+		preAdd(Sprite);
 		return group.add(Sprite);
 	}
-	
+
+	/**
+	 * Inserts a new `FlxSprite` subclass to the group at the specified position.
+	 *
+	 * @param   Position The position that the new sprite or sprite group should be inserted at.
+	 * @param   Sprite   The sprite or sprite group you want to insert into the group.
+	 * @return  The same object that was passed in.
+	 *
+	 * @since 4.3.0
+	 */
+	public function insert(Position:Int, Sprite:T):T
+	{
+		preAdd(Sprite);
+		return group.insert(Position, Sprite);
+	}
+
+	/**
+	 * Adjusts the position and other properties of the soon-to-be child of this sprite group.
+	 * Private helper to avoid duplicate code in `add()` and `insert()`.
+	 *
+	 * @param	Sprite	The sprite or sprite group that is about to be added or inserted into the group.
+	 */
+	function preAdd(Sprite:T):Void
+	{
+		var sprite:FlxSprite = cast Sprite;
+		sprite.x += x;
+		sprite.y += y;
+		sprite.alpha *= alpha;
+		sprite.scrollFactor.copyFrom(scrollFactor);
+		sprite.cameras = _cameras; // _cameras instead of cameras because get_cameras() will not return null
+
+		if (clipRect != null)
+			clipRectTransform(sprite, clipRect);
+	}
+
 	/**
 	 * Recycling is designed to help you reuse game objects without always re-allocating or "newing" them.
-	 * 
-	 * @param	ObjectClass		The class type you want to recycle (e.g. FlxSprite, EvilRobot, etc). Do NOT "new" the class in the parameter!
-	 * @param 	ContructorArgs  An array of arguments passed into a newly object if there aren't any dead members to recycle. 
-	 * @param 	Force           Force the object to be an ObjectClass and not a super class of ObjectClass. 
-	 * @return	A reference to the object that was created.  Don't forget to cast it back to the Class you want (e.g. myObject = myGroup.recycle(myObjectClass) as myObjectClass;).
+	 * It behaves differently depending on whether `maxSize` equals `0` or is bigger than `0`.
+	 *
+	 * `maxSize > 0` / "rotating-recycling" (used by `FlxEmitter`):
+	 *   - at capacity:  returns the next object in line, no matter its properties like `alive`, `exists` etc.
+	 *   - otherwise:    returns a new object.
+	 *
+	 * `maxSize == 0` / "grow-style-recycling"
+	 *   - tries to find the first object with `exists == false`
+	 *   - otherwise: adds a new object to the `members` array
+	 *
+	 * WARNING: If this function needs to create a new object, and no object class was provided,
+	 * it will return `null` instead of a valid object!
+	 *
+	 * @param   ObjectClass     The class type you want to recycle (e.g. `FlxSprite`, `EvilRobot`, etc).
+	 * @param   ObjectFactory   Optional factory function to create a new object
+	 *                          if there aren't any dead members to recycle.
+	 *                          If `null`, `Type.createInstance()` is used,
+	 *                          which requires the class to have no constructor parameters.
+	 * @param   Force           Force the object to be an `ObjectClass` and not a super class of `ObjectClass`.
+	 * @param   Revive          Whether recycled members should automatically be revived
+	 *                          (by calling `revive()` on them).
+	 * @return  A reference to the object that was created.
 	 */
-	inline public function recycle(ObjectClass:Class<FlxSprite> = null, ContructorArgs:Array<Dynamic> = null, Force:Bool = false):FlxSprite
+	public inline function recycle(?ObjectClass:Class<T>, ?ObjectFactory:Void->T, Force:Bool = false):T
 	{
-		return group.recycle(ObjectClass, ContructorArgs, Force);
+		return group.recycle(ObjectClass, ObjectFactory, Force);
 	}
-	
+
 	/**
-	 * Removes specified sprite from the group.
-	 * 
-	 * @param	Object	The <code>FlxSprite</code> you want to remove.
-	 * @param	Splice	Whether the object should be cut from the array entirely or not.
-	 * @return	The removed object.
+	 * Removes the specified sprite from the group.
+	 *
+	 * @param   Sprite   The `FlxSprite` you want to remove.
+	 * @param   Splice   Whether the object should be cut from the array entirely or not.
+	 * @return  The removed sprite.
 	 */
-	public function remove(Object:FlxSprite, Splice:Bool = false):FlxSprite
+	public function remove(Sprite:T, Splice:Bool = false):T
 	{
-		return group.remove(Object, Splice);
+		var sprite:FlxSprite = cast Sprite;
+		sprite.x -= x;
+		sprite.y -= y;
+		// alpha
+		sprite.cameras = null;
+		return group.remove(Sprite, Splice);
 	}
-	
+
 	/**
-	 * Replaces an existing <code>FlxSprite</code> with a new one.
-	 * 
-	 * @param	OldObject	The object you want to replace.
-	 * @param	NewObject	The new object you want to use instead.
-	 * @return	The new object.
+	 * Replaces an existing `FlxSprite` with a new one.
+	 *
+	 * @param   OldObject   The sprite you want to replace.
+	 * @param   NewObject   The new object you want to use instead.
+	 * @return  The new sprite.
 	 */
-	inline public function replace(OldObject:FlxSprite, NewObject:FlxSprite):FlxSprite
+	public inline function replace(OldObject:T, NewObject:T):T
 	{
 		return group.replace(OldObject, NewObject);
 	}
-	
+
 	/**
 	 * Call this function to sort the group according to a particular value and order.
 	 * For example, to sort game objects for Zelda-style overlaps you might call
-	 * <code>myGroup.sort("y",ASCENDING)</code> at the bottom of your
-	 * <code>FlxState.update()</code> override.  To sort all existing objects after
-	 * a big explosion or bomb attack, you might call <code>myGroup.sort("exists",DESCENDING)</code>.
-	 * 
-	 * @param	Index	The <code>String</code> name of the member variable you want to sort on.  Default value is "y".
-	 * @param	Order	A <code>FlxGroup</code> constant that defines the sort order.  Possible values are <code>ASCENDING</code> and <code>DESCENDING</code>.  Default value is <code>ASCENDING</code>.  
+	 * `group.sort(FlxSort.byY, FlxSort.ASCENDING)` at the bottom of your `FlxState#update()` override.
+	 *
+	 * @param   Function   The sorting function to use - you can use one of the premade ones in
+	 *                     `FlxSort` or write your own using `FlxSort.byValues()` as a "backend".
+	 * @param   Order      A constant that defines the sort order.
+	 *                     Possible values are `FlxSort.ASCENDING` (default) and `FlxSort.DESCENDING`.
 	 */
-	inline public function sort(Index:String = "y", Order:Int = -1):Void
+	public inline function sort(Function:Int->T->T->Int, Order:Int = FlxSort.ASCENDING):Void
 	{
-		group.sort(Index, Order);
+		group.sort(Function, Order);
 	}
-	
+
 	/**
-	 * Go through and set the specified variable to the specified value on all members of the group.
-	 * 
-	 * @param	VariableName	The string representation of the variable name you want to modify, for example "visible" or "scrollFactor".
-	 * @param	Value			The value you want to assign to that variable.
-	 * @param	Recurse			Default value is true, meaning if <code>setAll()</code> encounters a member that is a group, it will call <code>setAll()</code> on that group rather than modifying its variable.
-	 */
-	inline public function setAll(VariableName:String, Value:Dynamic, Recurse:Bool = true):Void
-	{
-		group.setAll(VariableName, Value, Recurse);
-	}
-	
-	/**
-	 * Go through and call the specified function on all members of the group.
-	 * Currently only works on functions that have no required parameters.
-	 * 
-	 * @param	FunctionName	The string representation of the function you want to call on each object, for example "kill()" or "init()".
-	 * @param	Recurse			Default value is true, meaning if <code>callAll()</code> encounters a member that is a group, it will call <code>callAll()</code> on that group rather than calling the group's function.
-	 */ 
-	inline public function callAll(FunctionName:String, Args:Array<Dynamic> = null, Recurse:Bool = true):Void
-	{
-		group.callAll(FunctionName, Args, Recurse);
-	}
-	
-	/**
-	 * Call this function to retrieve the first object with exists == false in the group.
+	 * Call this function to retrieve the first object with `exists == false` in the group.
 	 * This is handy for recycling in general, e.g. respawning enemies.
-	 * 
-	 * @param	ObjectClass		An optional parameter that lets you narrow the results to instances of this particular class.
-	 * @param 	Force           Force the object to be an ObjectClass and not a super class of ObjectClass. 
-	 * @return	A <code>FlxSprite</code> currently flagged as not existing.
+	 *
+	 * @param   ObjectClass   An optional parameter that lets you narrow the
+	 *                        results to instances of this particular class.
+	 * @param   Force         Force the object to be an `ObjectClass` and not a super class of `ObjectClass`.
+	 * @return  A `FlxSprite` currently flagged as not existing.
 	 */
-	inline public function getFirstAvailable(ObjectClass:Class<FlxSprite> = null, Force:Bool = false):FlxSprite
+	public inline function getFirstAvailable(?ObjectClass:Class<T>, Force:Bool = false):T
 	{
 		return group.getFirstAvailable(ObjectClass, Force);
 	}
-	
+
 	/**
-	 * Call this function to retrieve the first index set to 'null'.
-	 * Returns -1 if no index stores a null object.
-	 * 
-	 * @return	An <code>Int</code> indicating the first null slot in the group.
+	 * Call this function to retrieve the first index set to `null`.
+	 * Returns `-1` if no index stores a `null` object.
+	 *
+	 * @return  An `Int` indicating the first `null` slot in the group.
 	 */
-	inline public function getFirstNull():Int
+	public inline function getFirstNull():Int
 	{
 		return group.getFirstNull();
 	}
-	
+
 	/**
-	 * Call this function to retrieve the first object with exists == true in the group.
+	 * Call this function to retrieve the first object with `exists == true` in the group.
 	 * This is handy for checking if everything's wiped out, or choosing a squad leader, etc.
-	 * 
-	 * @return	A <code>FlxSprite</code> currently flagged as existing.
+	 *
+	 * @return  A `FlxSprite` currently flagged as existing.
 	 */
-	inline public function getFirstExisting():FlxSprite
+	public inline function getFirstExisting():T
 	{
 		return group.getFirstExisting();
 	}
-	
+
 	/**
-	 * Call this function to retrieve the first object with dead == false in the group.
+	 * Call this function to retrieve the first object with `dead == false` in the group.
 	 * This is handy for checking if everything's wiped out, or choosing a squad leader, etc.
-	 * 
-	 * @return	A <code>FlxSprite</code> currently flagged as not dead.
+	 *
+	 * @return  A `FlxSprite` currently flagged as not dead.
 	 */
-	inline public function getFirstAlive():FlxSprite
+	public inline function getFirstAlive():T
 	{
 		return group.getFirstAlive();
 	}
-	
+
 	/**
-	 * Call this function to retrieve the first object with dead == true in the group.
+	 * Call this function to retrieve the first object with `dead == true` in the group.
 	 * This is handy for checking if everything's wiped out, or choosing a squad leader, etc.
-	 * 
-	 * @return	A <code>FlxSprite</code> currently flagged as dead.
+	 *
+	 * @return  A `FlxSprite` currently flagged as dead.
 	 */
-	inline public function getFirstDead():FlxSprite
+	public inline function getFirstDead():T
 	{
 		return group.getFirstDead();
 	}
-	
+
 	/**
 	 * Call this function to find out how many members of the group are not dead.
-	 * 
-	 * @return	The number of <code>FlxSprite</code>s flagged as not dead.  Returns -1 if group is empty.
+	 *
+	 * @return  The number of `FlxSprite`s flagged as not dead. Returns `-1` if group is empty.
 	 */
-	inline public function countLiving():Int
+	public inline function countLiving():Int
 	{
 		return group.countLiving();
 	}
-	
+
 	/**
 	 * Call this function to find out how many members of the group are dead.
-	 * 
-	 * @return	The number of <code>FlxSprite</code>s flagged as dead.  Returns -1 if group is empty.
+	 *
+	 * @return  The number of `FlxSprite`s flagged as dead. Returns `-1` if group is empty.
 	 */
-	inline public function countDead():Int
+	public inline function countDead():Int
 	{
 		return group.countDead();
 	}
-	
+
 	/**
 	 * Returns a member at random from the group.
-	 * 
-	 * @param	StartIndex	Optional offset off the front of the array. Default value is 0, or the beginning of the array.
-	 * @param	Length		Optional restriction on the number of values you want to randomly select from.
-	 * @return	A <code>FlxSprite</code> from the members list.
+	 *
+	 * @param   StartIndex  Optional offset off the front of the array.
+	 *                      Default value is `0`, or the beginning of the array.
+	 * @param   Length      Optional restriction on the number of values you want to randomly select from.
+	 * @return  A `FlxSprite` from the `members` list.
 	 */
-	inline public function getRandom(StartIndex:Int = 0, Length:Int = 0):FlxSprite
+	public inline function getRandom(StartIndex:Int = 0, Length:Int = 0):T
 	{
 		return group.getRandom(StartIndex, Length);
 	}
-	
+
 	/**
-	 * Applies a function to all members
-	 * 
-	 * @param Function A function that modify one element at a time
+	 * Iterate through every member
+	 *
+	 * @return An iterator
 	 */
-	inline public function forEach(Function:FlxSprite->Void):Void
+	public inline function iterator(?filter:T->Bool):FlxTypedGroupIterator<T>
 	{
-		group.forEach(Function);
+		return new FlxTypedGroupIterator<T>(members, filter);
 	}
 
 	/**
-	 * Applies a function to all alive members
-	 * 
-	 * @param Function A function that modify one element at a time
+	 * Applies a function to all members.
+	 *
+	 * @param   Function   A function that modifies one element at a time.
+	 * @param   Recurse    Whether or not to apply the function to members of subgroups as well.
 	 */
-	inline public function forEachAlive(Function:FlxSprite->Void):Void
+	public inline function forEach(Function:T->Void, Recurse:Bool = false):Void
 	{
-		group.forEachAlive(Function);
+		group.forEach(Function, Recurse);
 	}
 
 	/**
-	 * Applies a function to all dead members
-	 * 
-	 * @param Function A function that modify one element at a time
+	 * Applies a function to all `alive` members.
+	 *
+	 * @param   Function   A function that modifies one element at a time.
+	 * @param   Recurse    Whether or not to apply the function to members of subgroups as well.
 	 */
-	inline public function forEachDead(Function:FlxSprite->Void):Void
+	public inline function forEachAlive(Function:T->Void, Recurse:Bool = false):Void
 	{
-		group.forEachDead(Function);
+		group.forEachAlive(Function, Recurse);
 	}
 
 	/**
-	 * Applies a function to all existing members
-	 * 
-	 * @param Function A function that modify one element at a time
+	 * Applies a function to all dead members.
+	 *
+	 * @param   Function   A function that modifies one element at a time.
+	 * @param   Recurse    Whether or not to apply the function to members of subgroups as well.
 	 */
-	public function forEachExists(Function:FlxSprite->Void):Void
+	public inline function forEachDead(Function:T->Void, Recurse:Bool = false):Void
 	{
-		group.forEachExists(Function);
+		group.forEachDead(Function, Recurse);
 	}
-	
+
 	/**
-	 * Remove all instances of <code>FlxSprite</code> from the list.
-	 * WARNING: does not destroy() or kill() any of these objects!
+	 * Applies a function to all existing members.
+	 *
+	 * @param   Function   A function that modifies one element at a time.
+	 * @param   Recurse    Whether or not to apply the function to members of subgroups as well.
 	 */
-	inline public function clear():Void
+	public inline function forEachExists(Function:T->Void, Recurse:Bool = false):Void
+	{
+		group.forEachExists(Function, Recurse);
+	}
+
+	/**
+	 * Applies a function to all members of type `Class<K>`.
+	 *
+	 * @param   ObjectClass   A class that objects will be checked against before Function is applied, ex: `FlxSprite`.
+	 * @param   Function      A function that modifies one element at a time.
+	 * @param   Recurse       Whether or not to apply the function to members of subgroups as well.
+	 */
+	public inline function forEachOfType<K>(ObjectClass:Class<K>, Function:K->Void, Recurse:Bool = false)
+	{
+		group.forEachOfType(ObjectClass, Function, Recurse);
+	}
+
+	/**
+	 * Remove all instances of `FlxSprite` from the list.
+	 * WARNING: does not `destroy()` or `kill()` any of these objects!
+	 */
+	public inline function clear():Void
 	{
 		group.clear();
 	}
-	
+
 	/**
-	 * Calls kill on the group's members and then on the group itself. 
-	 * You can revive this group later via <code>revive()</code> after this.
+	 * Calls `kill()` on the group's members and then on the group itself.
+	 * You can revive this group later via `revive()` after this.
 	 */
 	override public function kill():Void
 	{
 		super.kill();
 		group.kill();
 	}
-	
+
 	/**
 	 * Revives the group.
 	 */
@@ -511,36 +555,27 @@ class FlxSpriteGroup extends FlxSprite
 		super.revive();
 		group.revive();
 	}
-	
-	/**
-	 * Helper function for the sort process.
-	 * 
-	 * @param 	Obj1	The first object being sorted.
-	 * @param	Obj2	The second object being sorted.
-	 * @return	An integer value: -1 (Obj1 before Obj2), 0 (same), or 1 (Obj1 after Obj2).
-	 */
+
 	override public function reset(X:Float, Y:Float):Void
 	{
 		revive();
 		setPosition(X, Y);
-		
-		var sprite:FlxSprite;
-		for (i in 0...length)
+
+		for (sprite in _sprites)
 		{
-			sprite = group.members[i];
 			if (sprite != null)
 			{
 				sprite.reset(X, Y);
 			}
 		}
 	}
-	
+
 	/**
 	 * Helper function to set the coordinates of this object.
 	 * Handy since it only requires one line of code.
-	 * 
-	 * @param	X	The new x position
-	 * @param	Y	The new y position
+	 *
+	 * @param   X   The new x position
+	 * @param   Y   The new y position
 	 */
 	override public function setPosition(X:Float = 0, Y:Float = 0):Void
 	{
@@ -548,127 +583,131 @@ class FlxSpriteGroup extends FlxSprite
 		var dx:Float = X - x;
 		var dy:Float = Y - y;
 		multiTransformChildren([xTransform, yTransform], [dx, dy]);
-		
+
 		// don't transform children twice
 		_skipTransformChildren = true;
 		x = X; // this calls set_x
 		y = Y; // this calls set_y
 		_skipTransformChildren = false;
 	}
-	
+
 	/**
 	 * Handy function that allows you to quickly transform one property of sprites in this group at a time.
-	 * @param 	Function 	Function to transform the sprites. Example: <code>function(s:IFlxSprite, v:Dynamic) { s.acceleration.x = v; s.makeGraphic(10,10,0xFF000000); }</code>
-	 * @param 	Value  		Value which will passed to lambda function
+	 *
+	 * @param   Function   Function to transform the sprites. Example:
+	 *                     `function(sprite, v:Dynamic) { s.acceleration.x = v; s.makeGraphic(10,10,0xFF000000); }`
+	 * @param   Value      Value which will passed to lambda function.
 	 */
-	@:generic public function transformChildren<T>(Function:FlxSprite->T->Void, Value:T):Void
+	@:generic
+	public function transformChildren<V>(Function:T->V->Void, Value:V):Void
 	{
-		if (group == null) 
-		{
+		if (group == null)
 			return;
-		}
-		
-		var sprite:FlxSprite;
-		
-		for (i in 0...length)
+
+		for (sprite in _sprites)
 		{
-			sprite = group.members[i];
-			
-			if (sprite != null && sprite.exists)
-			{
-				Function(sprite, Value);
-			}
+			if (sprite != null)
+				Function(cast sprite, Value);
 		}
 	}
-	
+
 	/**
 	 * Handy function that allows you to quickly transform multiple properties of sprites in this group at a time.
-	 * 
-	 * @param	FunctionArray	Array of functions to transform sprites in this group.
-	 * @param	ValueArray		Array of values which will be passed to lambda functions
+	 *
+	 * @param   FunctionArray   `Array` of functions to transform sprites in this group.
+	 * @param   ValueArray      `Array` of values which will be passed to lambda functions
 	 */
-	@:generic public function multiTransformChildren<T>(FunctionArray:Array<FlxSprite->T->Void>, ValueArray:Array<T>):Void
+	@:generic
+	public function multiTransformChildren<V>(FunctionArray:Array<T->V->Void>, ValueArray:Array<V>):Void
 	{
-		if (group == null) return;
-		
-		var numProps:Int = FunctionArray.length;
-		
-		if (numProps > ValueArray.length)
-		{
+		if (group == null)
 			return;
-		}
-		
-		var basic:FlxSprite;
-		var lambda:FlxSprite->T->Void;
-		
-		for (i in 0...length)
+
+		var numProps:Int = FunctionArray.length;
+		if (numProps > ValueArray.length)
+			return;
+
+		var lambda:T->V->Void;
+		for (sprite in _sprites)
 		{
-			basic = group.members[i];
-			
-			if (basic != null && basic.exists)
+			if ((sprite != null) && sprite.exists)
 			{
-				for (j in 0...numProps)
+				for (i in 0...numProps)
 				{
-					lambda = FunctionArray[j];
-					lambda(basic, ValueArray[j]);
+					lambda = FunctionArray[i];
+					lambda(cast sprite, ValueArray[i]);
 				}
 			}
 		}
 	}
-	
+
 	// PROPERTIES GETTERS/SETTERS
-	
-	override private function set_exists(Value:Bool):Bool
+
+	override function set_camera(Value:FlxCamera):FlxCamera
+	{
+		if (camera != Value)
+			transformChildren(cameraTransform, Value);
+		return super.set_camera(Value);
+	}
+
+	override function set_cameras(Value:Array<FlxCamera>):Array<FlxCamera>
+	{
+		if (cameras != Value)
+			transformChildren(camerasTransform, Value);
+		return super.set_cameras(Value);
+	}
+
+	override function set_exists(Value:Bool):Bool
 	{
 		if (exists != Value)
 			transformChildren(existsTransform, Value);
 		return super.set_exists(Value);
 	}
-	
-	override private function set_visible(Value:Bool):Bool
+
+	override function set_visible(Value:Bool):Bool
 	{
-		if(exists && visible != Value)
+		if (exists && visible != Value)
 			transformChildren(visibleTransform, Value);
 		return super.set_visible(Value);
 	}
-	
-	override private function set_active(Value:Bool):Bool
+
+	override function set_active(Value:Bool):Bool
 	{
-		if(exists && active != Value)
+		if (exists && active != Value)
 			transformChildren(activeTransform, Value);
 		return super.set_active(Value);
 	}
-	
-	override private function set_alive(Value:Bool):Bool
+
+	override function set_alive(Value:Bool):Bool
 	{
-		if(exists && alive != Value)
+		if (alive != Value)
 			transformChildren(aliveTransform, Value);
 		return super.set_alive(Value);
 	}
-	
-	override private function set_x(Value:Float):Float
+
+	override function set_x(Value:Float):Float
 	{
 		if (!_skipTransformChildren && exists && x != Value)
 		{
 			var offset:Float = Value - x;
 			transformChildren(xTransform, offset);
 		}
-		
+
 		return x = Value;
 	}
-	
-	override private function set_y(Value:Float):Float
+
+	override function set_y(Value:Float):Float
 	{
 		if (!_skipTransformChildren && exists && y != Value)
 		{
 			var offset:Float = Value - y;
 			transformChildren(yTransform, offset);
 		}
-		
+
 		return y = Value;
 	}
-	
-	override private function set_angle(Value:Float):Float
+
+	override function set_angle(Value:Float):Float
 	{
 		if (exists && angle != Value)
 		{
@@ -677,407 +716,370 @@ class FlxSpriteGroup extends FlxSprite
 		}
 		return angle = Value;
 	}
-	
-	override private function set_alpha(Value:Float):Float 
+
+	override function set_alpha(Value:Float):Float
 	{
-		if (Value > 1)  
-		{
-			Value = 1;
-		}
-		else if (Value < 0)  
-		{
-			Value = 0;
-		}
-		
+		Value = FlxMath.bound(Value, 0, 1);
+
 		if (exists && alpha != Value)
 		{
 			var factor:Float = (alpha > 0) ? Value / alpha : 0;
-			transformChildren(alphaTransform, factor);
+			if (!directAlpha && alpha != 0)
+				transformChildren(alphaTransform, factor);
+			else
+				transformChildren(directAlphaTransform, Value);
 		}
 		return alpha = Value;
 	}
-	
-	override private function set_facing(Value:Int):Int
+
+	override function set_facing(Value:Int):Int
 	{
 		if (exists && facing != Value)
 			transformChildren(facingTransform, Value);
 		return facing = Value;
 	}
-	
-	override private function set_moves(Value:Bool):Bool
+
+	override function set_flipX(Value:Bool):Bool
+	{
+		if (exists && flipX != Value)
+			transformChildren(flipXTransform, Value);
+		return flipX = Value;
+	}
+
+	override function set_flipY(Value:Bool):Bool
+	{
+		if (exists && flipY != Value)
+			transformChildren(flipYTransform, Value);
+		return flipY = Value;
+	}
+
+	override function set_moves(Value:Bool):Bool
 	{
 		if (exists && moves != Value)
 			transformChildren(movesTransform, Value);
 		return moves = Value;
 	}
-	
-	override private function set_immovable(Value:Bool):Bool
+
+	override function set_immovable(Value:Bool):Bool
 	{
 		if (exists && immovable != Value)
 			transformChildren(immovableTransform, Value);
 		return immovable = Value;
 	}
-	
-	override private function set_solid(Value:Bool):Bool 
+
+	override function set_solid(Value:Bool):Bool
 	{
 		if (exists && solid != Value)
 			transformChildren(solidTransform, Value);
 		return super.set_solid(Value);
 	}
-	
-	override private function set_origin(Value:FlxPoint):FlxPoint
-	{
-		if (exists && origin != Value && Value != null)
-			transformChildren(originTransform, Value);
-		return origin = Value;
-	}
-	
-	override private function set_offset(Value:FlxPoint):FlxPoint
-	{
-		if (exists && offset != Value && Value != null)
-			transformChildren(offsetTransform, Value);
-		return offset = Value;
-	}
-	
-	override private function set_scale(Value:FlxPoint):FlxPoint
-	{
-		if (exists && scale != Value && Value != null)
-			transformChildren(scaleTransform, Value);
-		return scale = Value;
-	}
-	
-	override private function set_scrollFactor(Value:FlxPoint):FlxPoint
-	{
-		if (exists && scrollFactor != Value && Value != null)
-			transformChildren(scrollFactorTransform, Value);
-		return scrollFactor = Value;
-	}
-	
-	override private function set_color(Value:Int):Int 
+
+	override function set_color(Value:Int):Int
 	{
 		if (exists && color != Value)
 			transformChildren(gColorTransform, Value);
 		return color = Value;
 	}
-	
-	override private function set_blend(Value:BlendMode):BlendMode 
+
+	override function set_blend(Value:BlendMode):BlendMode
 	{
-		if (exists && _blend != Value)
+		if (exists && blend != Value)
 			transformChildren(blendTransform, Value);
-		return _blend = Value;
+		return blend = Value;
 	}
-	
-	/**
-	 * Whether the object should use complex render on flash target (which uses draw() method) or not.
-	 * WARNING: setting forceComplexRender to true decreases rendering performance for this object by a factor of 10x!
-	 */
-	override private function set_forceComplexRender(Value:Bool):Bool
+
+	override function set_clipRect(rect:FlxRect):FlxRect
 	{
-		if (exists && forceComplexRender != Value)
-			transformChildren(complexRenderTransform, Value);
-		return super.set_forceComplexRender(Value);
+		if (exists)
+			transformChildren(clipRectTransform, rect);
+		return super.set_clipRect(rect);
 	}
-	
+
+	override function set_pixelPerfectRender(Value:Bool):Bool
+	{
+		if (exists && pixelPerfectRender != Value)
+			transformChildren(pixelPerfectTransform, Value);
+		return super.set_pixelPerfectRender(Value);
+	}
+
 	/**
 	 * This functionality isn't supported in SpriteGroup
 	 */
-	override public function set_width(Value:Float):Float
+	override function set_width(Value:Float):Float
 	{
 		return Value;
 	}
-	
-	override public function get_width():Float
+
+	override function get_width():Float
 	{
 		if (length == 0)
-		{
 			return 0;
-		}
-		
+
 		var minX:Float = Math.POSITIVE_INFINITY;
 		var maxX:Float = Math.NEGATIVE_INFINITY;
-		
-		for (member in group.members)
+
+		for (member in _sprites)
 		{
+			if (member == null)
+				continue;
 			var minMemberX:Float = member.x;
 			var maxMemberX:Float = minMemberX + member.width;
-			
+
 			if (maxMemberX > maxX)
-			{
 				maxX = maxMemberX;
-			}
 			if (minMemberX < minX)
-			{
 				minX = minMemberX;
-			}
 		}
-		return (maxX - minX);
+		return maxX - minX;
 	}
-	
+
 	/**
 	 * This functionality isn't supported in SpriteGroup
 	 */
-	override public function set_height(Value:Float):Float
+	override function set_height(Value:Float):Float
 	{
 		return Value;
 	}
-	
-	override public function get_height():Float
+
+	override function get_height():Float
 	{
 		if (length == 0)
 		{
 			return 0;
 		}
-		
+
 		var minY:Float = Math.POSITIVE_INFINITY;
 		var maxY:Float = Math.NEGATIVE_INFINITY;
-		
-		for (member in group.members)
+
+		for (member in _sprites)
 		{
+			if (member == null)
+				continue;
 			var minMemberY:Float = member.y;
 			var maxMemberY:Float = minMemberY + member.height;
-			
+
 			if (maxMemberY > maxY)
-			{
 				maxY = maxMemberY;
-			}
 			if (minMemberY < minY)
-			{
 				minY = minMemberY;
-			}
 		}
-		return (maxY - minY);
+		return maxY - minY;
 	}
-	
+
 	// GROUP FUNCTIONS
-	
-	inline private function get_length():Int
+
+	inline function get_length():Int
 	{
 		return group.length;
 	}
-	
-	inline private function get_maxSize():Int
+
+	inline function get_maxSize():Int
 	{
 		return group.maxSize;
 	}
-	
-	private function set_maxSize(Size:Int):Int
+
+	inline function set_maxSize(Size:Int):Int
 	{
-		if (group == null)
-		{
-			group = new FlxTypedGroup<FlxSprite>(Size);
-			return Size;
-		}
-		
 		return group.maxSize = Size;
 	}
-	
-	inline private function get_members():Array<FlxSprite>
+
+	inline function get_members():Array<T>
 	{
 		return group.members;
 	}
-	
+
 	// TRANSFORM FUNCTIONS - STATIC TYPING
-	
-	private function xTransform(Sprite:FlxSprite, X:Float)								{ Sprite.x += X; }								// addition
-	private function yTransform(Sprite:FlxSprite, Y:Float)								{ Sprite.y += Y; }								// addition
-	private function angleTransform(Sprite:FlxSprite, Angle:Float)						{ Sprite.angle += Angle; }						// addition
-	private function alphaTransform(Sprite:FlxSprite, Alpha:Float)						{ Sprite.alpha *= Alpha; }						// multiplication
-	private function facingTransform(Sprite:FlxSprite, Facing:Int)						{ Sprite.facing = Facing; }						// set
-	private function movesTransform(Sprite:FlxSprite, Moves:Bool)						{ Sprite.moves = Moves; }						// set
-	private function complexRenderTransform(Sprite:FlxSprite, Complex:Bool)				{ Sprite.forceComplexRender = Complex; }		// set
-	private function gColorTransform(Sprite:FlxSprite, Color:Int)						{ Sprite.color = Color; }						// set
-	private function blendTransform(Sprite:FlxSprite, Blend:BlendMode)					{ Sprite.blend = Blend; }						// set
-	private function immovableTransform(Sprite:FlxSprite, Immovable:Bool)				{ Sprite.immovable = Immovable; }				// set
-	private function visibleTransform(Sprite:FlxSprite, Visible:Bool)					{ Sprite.visible = Visible; }					// set
-	private function activeTransform(Sprite:FlxSprite, Active:Bool)						{ Sprite.active = Active; }						// set
-	private function solidTransform(Sprite:FlxSprite, Solid:Bool)						{ Sprite.solid = Solid; }						// set
-	private function aliveTransform(Sprite:FlxSprite, Alive:Bool)						{ Sprite.alive = Alive; }						// set
-	private function existsTransform(Sprite:FlxSprite, Exists:Bool)						{ Sprite.exists = Exists; }						// set
-	private function offsetTransform(Sprite:FlxSprite, Offset:FlxPoint)					{ Sprite.offset.copyFrom(Offset); }				// set
-	private function originTransform(Sprite:FlxSprite, Origin:FlxPoint)					{ Sprite.origin.copyFrom(Origin); }				// set
-	private function scaleTransform(Sprite:FlxSprite, Scale:FlxPoint)					{ Sprite.scale.copyFrom(Scale); }				// set
-	private function scrollFactorTransform(Sprite:FlxSprite, ScrollFactor:FlxPoint)		{ Sprite.scrollFactor.copyFrom(ScrollFactor); }	// set
-	// NOT SUPPORTED FUNCTIONALITY
-	// THESE METHODS OVERRIDEN FOR SAFETY PURPOSES
-	
+
+	inline function xTransform(Sprite:FlxSprite, X:Float)
+		Sprite.x += X; // addition
+
+	inline function yTransform(Sprite:FlxSprite, Y:Float)
+		Sprite.y += Y; // addition
+
+	inline function angleTransform(Sprite:FlxSprite, Angle:Float)
+		Sprite.angle += Angle; // addition
+
+	inline function alphaTransform(Sprite:FlxSprite, Alpha:Float)
+	{
+		if (Sprite.alpha != 0 || Alpha == 0)
+			Sprite.alpha *= Alpha; // multiplication
+		else
+			Sprite.alpha = 1 / Alpha; // direct set to avoid stuck sprites
+	}
+
+	inline function directAlphaTransform(Sprite:FlxSprite, Alpha:Float)
+		Sprite.alpha = Alpha; // direct set
+
+	inline function facingTransform(Sprite:FlxSprite, Facing:Int)
+		Sprite.facing = Facing;
+
+	inline function flipXTransform(Sprite:FlxSprite, FlipX:Bool)
+		Sprite.flipX = FlipX;
+
+	inline function flipYTransform(Sprite:FlxSprite, FlipY:Bool)
+		Sprite.flipY = FlipY;
+
+	inline function movesTransform(Sprite:FlxSprite, Moves:Bool)
+		Sprite.moves = Moves;
+
+	inline function pixelPerfectTransform(Sprite:FlxSprite, PixelPerfect:Bool)
+		Sprite.pixelPerfectRender = PixelPerfect;
+
+	inline function gColorTransform(Sprite:FlxSprite, Color:Int)
+		Sprite.color = Color;
+
+	inline function blendTransform(Sprite:FlxSprite, Blend:BlendMode)
+		Sprite.blend = Blend;
+
+	inline function immovableTransform(Sprite:FlxSprite, Immovable:Bool)
+		Sprite.immovable = Immovable;
+
+	inline function visibleTransform(Sprite:FlxSprite, Visible:Bool)
+		Sprite.visible = Visible;
+
+	inline function activeTransform(Sprite:FlxSprite, Active:Bool)
+		Sprite.active = Active;
+
+	inline function solidTransform(Sprite:FlxSprite, Solid:Bool)
+		Sprite.solid = Solid;
+
+	inline function aliveTransform(Sprite:FlxSprite, Alive:Bool)
+		Sprite.alive = Alive;
+
+	inline function existsTransform(Sprite:FlxSprite, Exists:Bool)
+		Sprite.exists = Exists;
+
+	inline function cameraTransform(Sprite:FlxSprite, Camera:FlxCamera)
+		Sprite.camera = Camera;
+
+	inline function camerasTransform(Sprite:FlxSprite, Cameras:Array<FlxCamera>)
+		Sprite.cameras = Cameras;
+
+	inline function offsetTransform(Sprite:FlxSprite, Offset:FlxPoint)
+		Sprite.offset.copyFrom(Offset);
+
+	inline function originTransform(Sprite:FlxSprite, Origin:FlxPoint)
+		Sprite.origin.copyFrom(Origin);
+
+	inline function scaleTransform(Sprite:FlxSprite, Scale:FlxPoint)
+		Sprite.scale.copyFrom(Scale);
+
+	inline function scrollFactorTransform(Sprite:FlxSprite, ScrollFactor:FlxPoint)
+		Sprite.scrollFactor.copyFrom(ScrollFactor);
+
+	inline function clipRectTransform(Sprite:FlxSprite, ClipRect:FlxRect)
+	{
+		if (ClipRect == null)
+			Sprite.clipRect = null;
+		else
+			Sprite.clipRect = FlxRect.get(ClipRect.x - Sprite.x + x, ClipRect.y - Sprite.y + y, ClipRect.width, ClipRect.height);
+	}
+
+	// Functions for the FlxCallbackPoint
+	inline function offsetCallback(Offset:FlxPoint)
+		transformChildren(offsetTransform, Offset);
+
+	inline function originCallback(Origin:FlxPoint)
+		transformChildren(originTransform, Origin);
+
+	inline function scaleCallback(Scale:FlxPoint)
+		transformChildren(scaleTransform, Scale);
+
+	inline function scrollFactorCallback(ScrollFactor:FlxPoint)
+		transformChildren(scrollFactorTransform, ScrollFactor);
+
+	// NON-SUPPORTED FUNCTIONALITY
+	// THESE METHODS ARE OVERRIDDEN FOR SAFETY PURPOSES
+
 	/**
 	 * This functionality isn't supported in SpriteGroup
 	 * @return this sprite group
 	 */
-	override public function loadFromSprite(Sprite:FlxSprite):FlxSprite 
+	override public function loadGraphicFromSprite(Sprite:FlxSprite):FlxSprite
 	{
-		#if !FLX_NO_DEBUG
-		FlxG.log.error("loadFromSprite() is not supported in FlxSpriteGroups.");
+		#if FLX_DEBUG
+		throw "This function is not supported in FlxSpriteGroup";
 		#end
 		return this;
 	}
-	
+
 	/**
 	 * This functionality isn't supported in SpriteGroup
 	 * @return this sprite group
 	 */
-	override public function loadGraphic(Graphic:Dynamic, Animated:Bool = false, Reverse:Bool = false, Width:Int = 0, Height:Int = 0, Unique:Bool = false, ?Key:String):FlxSprite 
+	override public function loadGraphic(Graphic:FlxGraphicAsset, Animated:Bool = false, Width:Int = 0, Height:Int = 0, Unique:Bool = false,
+			?Key:String):FlxSprite
 	{
 		return this;
 	}
-	
+
 	/**
 	 * This functionality isn't supported in SpriteGroup
 	 * @return this sprite group
 	 */
-	override public function loadRotatedGraphic(Graphic:Dynamic, Rotations:Int = 16, Frame:Int = -1, AntiAliasing:Bool = false, AutoBuffer:Bool = false, ?Key:String):FlxSprite 
+	override public function loadRotatedGraphic(Graphic:FlxGraphicAsset, Rotations:Int = 16, Frame:Int = -1, AntiAliasing:Bool = false,
+			AutoBuffer:Bool = false, ?Key:String):FlxSprite
 	{
-		#if !FLX_NO_DEBUG
-		FlxG.log.error("loadRotatedGraphic() is not supported in FlxSpriteGroups.");
+		#if FLX_DEBUG
+		throw "This function is not supported in FlxSpriteGroup";
 		#end
 		return this;
 	}
-	
+
 	/**
 	 * This functionality isn't supported in SpriteGroup
 	 * @return this sprite group
 	 */
-	override public function makeGraphic(Width:Int, Height:Int, Color:Int = 0xffffffff, Unique:Bool = false, ?Key:String):FlxSprite 
+	override public function makeGraphic(Width:Int, Height:Int, Color:Int = FlxColor.WHITE, Unique:Bool = false, ?Key:String):FlxSprite
 	{
-		#if !FLX_NO_DEBUG
-		FlxG.log.error("makeGraphic() is not supported in FlxSpriteGroups.");
+		#if FLX_DEBUG
+		throw "This function is not supported in FlxSpriteGroup";
 		#end
 		return this;
 	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 * @return this sprite group
-	 */
-	override public function loadImageFromTexture(Data:Dynamic, Reverse:Bool = false, Unique:Bool = false, ?FrameName:String):FlxSprite 
-	{
-		#if !FLX_NO_DEBUG
-		FlxG.log.error("loadImageFromTexture() is not supported in FlxSpriteGroups.");
-		#end
-		return this;
-	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 * @return this sprite group
-	 */
-	override public function loadRotatedImageFromTexture(Data:Dynamic, Image:String, Rotations:Int = 16, AntiAliasing:Bool = false, AutoBuffer:Bool = false):FlxSprite 
-	{
-		#if !FLX_NO_DEBUG
-		FlxG.log.error("loadRotatedImageFromTexture() is not supported in FlxSpriteGroups.");
-		#end
-		return this;
-	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 * @return the BitmapData passed in as parameter
-	 */
-	override private function set_pixels(Value:BitmapData):BitmapData 
+
+	override function set_pixels(Value:BitmapData):BitmapData
 	{
 		return Value;
 	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 * @return the FlxFrame passed in as parameter
-	 */
-	override private function set_frame(Value:FlxFrame):FlxFrame 
+
+	override function set_frame(Value:FlxFrame):FlxFrame
 	{
 		return Value;
 	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 * @return WARNING: returns null
-	 */
-	override private function get_pixels():BitmapData 
+
+	override function get_pixels():BitmapData
 	{
 		return null;
 	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 * @return WARNING: returns null
-	 */
-	override private function get_colorTransform():ColorTransform 
-	{
-		return null;
-	}
-	
+
 	/**
 	 * Internal function to update the current animation frame.
-	 * 
+	 *
 	 * @param	RunOnCpp	Whether the frame should also be recalculated if we're on a non-flash target
 	 */
-	inline override private function calcFrame(RunOnCpp:Bool = false):Void
+	override inline function calcFrame(RunOnCpp:Bool = false):Void
 	{
 		// Nothing to do here
 	}
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 */
-	inline override private function resetHelpers():Void {  }
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 */
-	inline override public function stamp(Brush:FlxSprite, X:Int = 0, Y:Int = 0):Void {  }
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 */
-	inline override private function updateColorTransform():Void {  }
-	
-	/**
-	 * This functionality isn't supported in SpriteGroup
-	 */
-	inline override public function updateFrameData():Void {  }
-}
 
-/**
- * Helper class to make sure the FlxPoint vars of FlxSpriteGroup members
- * can be updated when the points of the FlxSpriteGroup are changed.
- * IMPORTANT: Calling set(x, y); is MUCH FASTER than setting x, and y separately.
- */
-private class FlxPointHelper extends FlxPoint
-{
-	private var _parent:FlxSpriteGroup;
-	private var _transformFunc:FlxSprite->FlxPoint->Void;
-	
-	public function new(parent:FlxSpriteGroup, transformFunc:FlxSprite->FlxPoint->Void)
+	/**
+	 * This functionality isn't supported in SpriteGroup
+	 */
+	override inline function resetHelpers():Void {}
+
+	/**
+	 * This functionality isn't supported in SpriteGroup
+	 */
+	override public inline function stamp(Brush:FlxSprite, X:Int = 0, Y:Int = 0):Void {}
+
+	override function set_frames(Frames:FlxFramesCollection):FlxFramesCollection
 	{
-		_parent = parent;
-		_transformFunc = transformFunc;
-		super(0, 0);
+		return Frames;
 	}
-	
-	override public function set(X:Float = 0, Y:Float = 0):FlxPointHelper
-	{
-		super.set(X, Y);
-		_parent.transformChildren(_transformFunc, this);
-		return this;
-	}
-	
-	override private function set_x(Value:Float):Float
-	{
-		super.set_x(Value);
-		_parent.transformChildren(_transformFunc, this);
-		return Value;
-	}
-	
-	override private function set_y(Value:Float):Float
-	{
-		super.set_y(Value);
-		_parent.transformChildren(_transformFunc, this);
-		return Value;
-	}
-	
-	override public function destroy():Void
-	{
-		super.destroy();
-		_parent = null;
-		_transformFunc = null;
-	}
+
+	/**
+	 * This functionality isn't supported in SpriteGroup
+	 */
+	override inline function updateColorTransform():Void {}
 }

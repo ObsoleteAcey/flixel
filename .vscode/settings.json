@@ -1,0 +1,10 @@
+{
+	"haxecheckstyle.sourceFolders": [
+		"flixel",
+		"script",
+		"tests"
+	],
+	"[haxe]": {
+		"editor.formatOnSave": true
+	}
+}

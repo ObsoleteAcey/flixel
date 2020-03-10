@@ -1,27 +1,31 @@
-language: java
+language: haxe
+dist: xenial
+services:
+  - xvfb
 
-before_script:
-  - sudo add-apt-repository ppa:eyecreate/haxe -y
-  - sudo apt-get update
-  - sudo apt-get install haxe -y
-  - sudo apt-get install -qq --force-yes libgd2-xpm ia32-libs ia32-libs-multiarch
-  - mkdir ~/haxelib
-  - haxelib setup ~/haxelib
-  - haxelib install lime
-  - haxelib install lime-tools
-  - haxelib run lime install openfl
-  - haxelib install systools
-  - haxelib install spinehx
-  - haxelib install actuate
-  - haxelib install hxcpp
-  - haxelib install nape
-  - haxelib install task
-  - haxelib git firetongue https://github.com/larsiusprime/firetongue
-  - haxelib git flixel-addons https://github.com/HaxeFlixel/flixel-addons
-  - haxelib git flixel-demos https://github.com/HaxeFlixel/flixel-demos
-  - haxelib git flixel-tools https://github.com/HaxeFlixel/flixel-tools
-  - haxelib git flixel-ui https://github.com/HaxeFlixel/flixel-ui dev
+haxe:
+  - 3.4.7
+  - development
+
+env:
+  - TARGET=flash OPENFL=new
+  - TARGET=neko  OPENFL=new
+  - TARGET=cpp   OPENFL=new
+  - TARGET=html5 OPENFL=new
+
+addons:
+  apt:
+    packages:
+    - gcc-multilib
+    - g++-multilib
+
+before_install:
+  - export DISPLAY=:99.0
+
+install:
   - haxelib dev flixel .
 
 script:
-  - haxelib run flixel-tools testdemos
+  - while sleep 540; do echo "=====[ $SECONDS seconds still running ]====="; done &
+  - haxe --cwd tests --run RunTravis $TARGET $OPENFL
+  - kill %1
